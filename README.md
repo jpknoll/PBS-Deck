@@ -25,9 +25,17 @@ a castlabs (Widevine) Electron window, plus a **controller navigation layer**
 | D-pad / stick | Move focus (hold to repeat, TV-style) |
 | A / Enter | Select / play |
 | B (or Esc / back) | Go back one page; **B on the PBS home page exits the app** |
-| Y | Jump to search box |
-| LB / RB | Scroll a carousel / row horizontally |
+| Y | Jump to search box (opens the search menu if needed) |
+| X | Play / pause — drives the embedded player via key injection |
+| LB / RB | Seek 10s on a video page, otherwise scroll a row |
 | Menu (or View) | Toggle the on-screen hints overlay |
+
+Playback happens inside PBS's cross-origin `player.pbs.org` iframe, so the
+engine can't click its buttons directly. Instead the player iframe is itself a
+focus target (auto-focused at the top of a video page) and the transport keys
+inject *real* key events from the main process (Space = play/pause,
+ArrowLeft/Right = seek). PBS's `videojs` player posts its state to the parent,
+so the on-screen toast shows the accurate Playing/Paused status.
 
 The focus ring is drawn in PBS yellow; the engine re-scans the DOM via
 `MutationObserver` so newly loaded carousel rows are picked up automatically.

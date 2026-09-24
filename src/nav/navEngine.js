@@ -36,6 +36,7 @@ const FOCUS_SELECTOR = [
   'button',
   '[role="button"]',
   'a[href]',
+  'iframe[src*="player.pbs.org"]',
 ].join(', ');
 
 function createNavEngine({ ipcRenderer, domDump = false } = {}) {
@@ -57,6 +58,34 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
   let signInCard = null;
   let signInCta = null;
   let signInDismissed = false;
+  let playerPlaying = null;
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('message', (e) => {
+      if (!e.origin || e.origin.indexOf('player.pbs.org') === -1) return;
+      let data = e.data;
+      if (data && data.event) {
+        if (data.event === 'videojs:play' && playerPlaying !== true) {
+          playerPlaying = true;
+          showToast('\u25b6\ufe0f playing');
+        } else if (data.event === 'videojs:pause' && playerPlaying !== false) {
+          playerPlaying = false;
+          showToast('\u23f8 paused');
+        }
+      }
+      if (domDump) {
+        let payload = data;
+        if (typeof payload === 'object') {
+          try {
+            payload = JSON.stringify(payload).slice(0, 300);
+          } catch (ignored) {
+            payload = '[unserializable]';
+          }
+        }
+        console.log(`[pbs-deck] msg from ${e.origin}: ${payload}`);
+      }
+    });
+  }
 
   function ensureReady() {
     if (document.readyState === 'loading') {
@@ -142,6 +171,23 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
         font-size: 12.5px;
         color: #98a2ad;
       }
+      .pbs-deck-toast {
+        position: fixed;
+        left: 50%;
+        top: 14%;
+        transform: translateX(-50%);
+        z-index: 2147483647;
+        pointer-events: none;
+        background: ${OVERLAY_BG};
+        color: ${OVERLAY_TEXT};
+        font: 600 18px/1.3 system-ui, -apple-system, sans-serif;
+        padding: 10px 22px;
+        border-radius: 999px;
+        border: 1.5px solid rgba(242, 193, 14, 0.45);
+        opacity: 0;
+        transition: opacity 260ms ease;
+        white-space: nowrap;
+      }
     `;
     document.head.appendChild(styleEl);
   }
@@ -171,7 +217,7 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
     if (style.display === 'none' || style.visibility === 'hidden') return false;
     if (+style.opacity === 0) return false;
     if (el.getAttribute('aria-hidden') === 'true') return false;
-    if (NOISE_CLASS.test(String(el.className || ''))) return false;
+    if (el.tagName !== 'INPUT' && NOISE_CLASS.test(String(el.className || ''))) return false;
     const rect = el.getBoundingClientRect();
     if (rect.width < MIN_FOCUS_WIDTH || rect.height < MIN_FOCUS_HEIGHT) return false;
     if (rect.width * rect.height < MIN_FOCUS_AREA) return false;
@@ -214,11 +260,19 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
     const candidates = scanFocusables()
       .map(candidateInfo)
       .sort((a, b) => a.y - b.y || a.x - b.x);
+    const si = document.querySelector('input[type="search"], input[name="q"], input[aria-label="Search PBS"]');
+    let searchDebug = 'absent';
+    if (si) {
+      const r = si.getBoundingClientRect();
+      const st = window.getComputedStyle(si);
+      searchDebug = `tag=${si.tagName} w=${Math.round(r.width)} h=${Math.round(r.height)} display=${st.display} vis=${st.visibility} aria=${si.getAttribute('aria-label')}`;
+    }
     ipcRenderer.send('nav:dom-dump', {
       url: location.href,
       reason,
       title: (document.title || '').slice(0, 100),
       viewport: `${window.innerWidth}x${window.innerHeight}`,
+      search: searchDebug,
       count: candidates.length,
       candidates,
     });
@@ -428,7 +482,8 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
         <tr><td>A / Enter</td><td>Select</td></tr>
         <tr><td>B / Esc</td><td>Back (B at home exits)</td></tr>
         <tr><td>Y</td><td>Jump to search</td></tr>
-        <tr><td>LB / RB</td><td>Scroll carousels left / right</td></tr>
+        <tr><td>X</td><td>Play / Pause (on a video)</td></tr>
+        <tr><td>LB / RB</td><td>Seek 10s on a video, else scroll rows</td></tr>
         <tr><td>Menu</td><td>Toggle these hints</td></tr>
       </table>
     `;
@@ -508,14 +563,87 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
   }
 
   function focusSearch() {
-    const input = document.querySelector('input[type="search"]') || document.querySelector('input[name="q"]');
-    if (!input) return;
-    setCurrent(input);
-    try {
-      input.focus({ preventScroll: false });
-    } catch (ignored) {
-      // continue
+    const input =
+      document.querySelector('input[type="search"]') ||
+      document.querySelector('input[name="q"]') ||
+      document.querySelector('input[aria-label="Search PBS"]');
+    if (input && input.getBoundingClientRect().width > 0) {
+      setCurrent(input);
+      try {
+        input.focus({ preventScroll: false });
+      } catch (ignored) {
+        // continue
+      }
+      if (domDump) console.log('[pbs-deck] search input focused');
+      return;
     }
+    const opener = document.querySelector('button[aria-label="Open Search Menu"]');
+    if (opener && opener.getBoundingClientRect().width > 0) {
+      opener.click();
+      setTimeout(focusSearch, 300);
+      return;
+    }
+    if (domDump) console.log('[pbs-deck] search entry not found');
+  }
+
+  function findPlayer() {
+    return document.querySelector('iframe[src*="player.pbs.org"]');
+  }
+
+  function sendKey(keyCode) {
+    if (!ipcRenderer) return;
+    ipcRenderer.send('nav:key', keyCode);
+  }
+
+  function showToast(text) {
+    injectStyles();
+    let toast = document.querySelector('.pbs-deck-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.className = 'pbs-deck-toast';
+      document.documentElement.appendChild(toast);
+    }
+    toast.textContent = text;
+    toast.style.opacity = '1';
+    clearTimeout(toast.__t);
+    toast.__t = setTimeout(() => {
+      toast.style.opacity = '0';
+    }, 1400);
+  }
+
+  function handlePlayPause() {
+    const player = findPlayer();
+    if (player && player.getBoundingClientRect().width > 0) {
+      try {
+        player.focus();
+      } catch (ignored) {
+        // continue
+      }
+      player.scrollIntoView({ block: 'center', inline: 'nearest' });
+      sendKey('Space');
+      showToast('\u25b6\ufe0f / \u23f8 play / pause');
+      if (domDump) console.log('[pbs-deck] play/pause key sent to player');
+      return true;
+    }
+    const video = document.querySelector('video');
+    if (video && !video.paused) {
+      video.pause();
+      showToast('\u23f8 paused');
+      return true;
+    } else if (video) {
+      video.play().catch(function () {});
+      showToast('\u25b6\ufe0f playing');
+      return true;
+    }
+    return false;
+  }
+
+  function handleSeek(dir) {
+    const player = findPlayer();
+    if (!player || player.getBoundingClientRect().width <= 0) return false;
+    sendKey(dir > 0 ? 'ArrowRight' : 'ArrowLeft');
+    showToast(dir > 0 ? '\u23e9 +10s' : '\u23ea -10s');
+    return true;
   }
 
   function updateRing() {
@@ -611,15 +739,18 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
       case 'Y':
         focusSearch();
         break;
+      case 'X':
+        handlePlayPause();
+        break;
       case 'VIEW':
       case 'MENU':
         toggleHints();
         break;
       case 'LB':
-        scrollBy(-Math.floor(window.innerWidth * SCROLL_STEP_FACTOR));
+        if (!handleSeek(-1)) scrollBy(-Math.floor(window.innerWidth * SCROLL_STEP_FACTOR));
         break;
       case 'RB':
-        scrollBy(Math.floor(window.innerWidth * SCROLL_STEP_FACTOR));
+        if (!handleSeek(1)) scrollBy(Math.floor(window.innerWidth * SCROLL_STEP_FACTOR));
         break;
       default:
         break;
@@ -649,8 +780,13 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
     if (pollingTimer) return;
     injectStyles();
     focusables = scanFocusables();
-    current = focusables[0] || null;
-    if (current) setCurrent(current);
+    const player = findPlayer();
+    if (player && player.getBoundingClientRect().width > 0) {
+      setCurrent(player);
+    } else {
+      current = focusables[0] || null;
+      if (current) setCurrent(current);
+    }
     showSignInCardIfNeeded();
     showHints();
 

@@ -126,6 +126,7 @@ function createWindow() {
   }
 
   registerProbeClicker(win.webContents);
+  registerProbeKeys(win.webContents);
 }
 
 function handleCustomAppUrl() {
@@ -225,6 +226,7 @@ function handleCustomAppUrl() {
   }
 
   registerProbeClicker(win.webContents);
+  registerProbeKeys(win.webContents);
 }
 
 function showDefaultApp() {
@@ -254,6 +256,27 @@ function showDefaultApp() {
   win.loadFile("./index.html");
 }
 
+const sendKeyTo = (wc, keyCode) => {
+  if (!wc || wc.isDestroyed()) return;
+  wc.sendInputEvent({ type: "keyDown", keyCode });
+  wc.sendInputEvent({ type: "char", keyCode });
+  wc.sendInputEvent({ type: "keyUp", keyCode });
+};
+
+const registerProbeKeys = (webContents) => {
+  const keys = (process.env.PBS_DECK_PROBE_KEY || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (keys.length === 0) return;
+  setTimeout(() => {
+    if (!webContents.isDestroyed()) {
+      console.log("[pbs-probe] sending keys:", keys.join(", "));
+      for (const k of keys) sendKeyTo(webContents, k);
+    }
+  }, 9000);
+};
+
 const registerProbeClicker = (webContents) => {
   const targets = (process.env.PBS_DECK_PROBE_CLICK || "")
     .split(",")
@@ -272,7 +295,9 @@ const registerProbeClicker = (webContents) => {
         `(() => {
           const target = ${JSON.stringify(target)};
           const el = [...document.querySelectorAll('button, a')].find(
-            (b) => b.textContent && b.textContent.trim() === target,
+            (b) =>
+              (b.textContent && b.textContent.trim() === target) ||
+              b.getAttribute('aria-label') === target,
           );
           if (el) { el.click(); return true; }
           return false;
@@ -292,12 +317,20 @@ const registerNavHandlers = () => {
   ipcMain.on("nav:exit", (event) => {
     BrowserWindow.fromWebContents(event.sender)?.close();
   });
+  ipcMain.on("nav:key", (event, keyCode) => {
+    const wc = event.sender;
+    if (!wc || wc.isDestroyed() || typeof keyCode !== "string") return;
+    wc.sendInputEvent({ type: "keyDown", keyCode });
+    wc.sendInputEvent({ type: "char", keyCode });
+    wc.sendInputEvent({ type: "keyUp", keyCode });
+  });
 
   ipcMain.on("nav:dom-dump", (_event, payload) => {
     console.log(`\n==== PBS DOM DUMP (${payload?.reason || "?"}) ====`);
     console.log(`url: ${payload?.url || ""}`);
     console.log(`title: ${payload?.title || ""}`);
     console.log(`viewport: ${payload?.viewport || ""}`);
+    console.log(`search input: ${payload?.search || "absent"}`);
     console.log(`candidates: ${payload?.count ?? 0}`);
     for (const c of payload?.candidates || []) {
       const label = c.href || (c.role ? `role=${c.role}` : "");
