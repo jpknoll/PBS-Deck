@@ -124,6 +124,8 @@ function createWindow() {
       win.webContents.setZoomFactor(zoomFactor);
     });
   }
+
+  registerProbeClicker(win.webContents);
 }
 
 function handleCustomAppUrl() {
@@ -221,6 +223,8 @@ function handleCustomAppUrl() {
       win.webContents.setZoomFactor(zoomFactor);
     });
   }
+
+  registerProbeClicker(win.webContents);
 }
 
 function showDefaultApp() {
@@ -249,6 +253,40 @@ function showDefaultApp() {
 
   win.loadFile("./index.html");
 }
+
+const registerProbeClicker = (webContents) => {
+  const targets = (process.env.PBS_DECK_PROBE_CLICK || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (targets.length === 0) return;
+  let step = 0;
+  const timer = setInterval(() => {
+    if (step >= targets.length || webContents.isDestroyed()) {
+      clearInterval(timer);
+      return;
+    }
+    const target = targets[step];
+    webContents
+      .executeJavaScript(
+        `(() => {
+          const target = ${JSON.stringify(target)};
+          const el = [...document.querySelectorAll('button, a')].find(
+            (b) => b.textContent && b.textContent.trim() === target,
+          );
+          if (el) { el.click(); return true; }
+          return false;
+        })()`,
+      )
+      .then((done) => {
+        if (done && !webContents.isDestroyed()) {
+          step++;
+          console.log("[pbs-probe] clicked:", target);
+        }
+      })
+      .catch(() => {});
+  }, 1000);
+};
 
 const registerNavHandlers = () => {
   ipcMain.on("nav:exit", (event) => {

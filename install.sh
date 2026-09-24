@@ -6,7 +6,7 @@ if [ "$EUID" -eq 0 ]
 fi
 
 APP=PBS-Deck
-REPO=YOUR_GITHUB_USERNAME/PBS-Deck
+REPO=jpknoll/PBS-Deck
 RELEASE_URL=https://api.github.com/repos/$REPO/releases/latest
 RAW_BASE=https://raw.githubusercontent.com/$REPO/refs/heads/main
 
