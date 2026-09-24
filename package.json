@@ -1,0 +1,47 @@
+{
+  "name": "pbs-deck",
+  "version": "0.1.0",
+  "description": "Controller-friendly PBS streaming launcher for SteamOS HTPCs, forked from StreamingServiceLauncher",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "electron .",
+    "build": "electron-builder",
+    "build:unpacked": "electron-builder --linux --dir"
+  },
+  "build": {
+    "appId": "com.jpknoll.PBSDeck",
+    "productName": "PBS Deck",
+    "electronDownload": {
+      "mirror": "https://github.com/castlabs/electron-releases/releases/download/v"
+    },
+    "files": [
+      "index.js",
+      "package.json",
+      "services.json",
+      "src/**/*",
+      "js/*",
+      "index.html",
+      "preload.js"
+    ],
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "artifactName": "PBS_Deck_v${version}_linux.${ext}",
+      "category": "AudioVideo"
+    }
+  },
+  "keywords": [
+    "pbs",
+    "steamos",
+    "electron",
+    "streaming"
+  ],
+  "author": "jpknoll (fork of aarron-lee)",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "github:castlabs/electron-releases#v40.7.0+wvcus",
+    "electron-builder": "^26.0.12"
+  }
+}

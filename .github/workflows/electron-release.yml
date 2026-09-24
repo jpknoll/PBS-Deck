@@ -1,0 +1,83 @@
+name: Release
+
+permissions:
+  contents: write
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "main"
+      - "dev"
+    tags:
+      - "v*.*.*"
+
+jobs:
+  build_linux:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+    steps:
+      - name: set git global safe directory
+        run: |
+          pacman -Syu git pnpm tree zip unzip --noconfirm
+          git config --global --add safe.directory $(realpath .)
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: build AppImage
+        run: |
+          pnpm install
+          pnpm run build --linux
+          chmod +x dist/PBS_Deck_v*_linux.AppImage
+        continue-on-error: true
+
+      - name: build zip
+        run: |
+          pnpm install
+          pnpm run build:unpacked
+          zip -r dist/app_unpacked.zip dist/linux-unpacked
+        continue-on-error: true
+
+      - name: show files
+        run: |
+          ls ./dist/PBS_Deck_v*_linux.AppImage
+          ls ./dist/app_unpacked.zip
+
+      - name: Publish Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: PBSDeck
+          path: |
+            ./dist/PBS_Deck_v*_linux.AppImage
+            ./dist/app_unpacked.zip
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    needs: build_linux
+    steps:
+      - run: mkdir /tmp/artifacts
+
+      - name: download artifact
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/artifacts
+
+      - run: ls -R /tmp/artifacts
+
+      - name: publish to github release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            /tmp/artifacts/PBSDeck/PBS_Deck_v*_linux.AppImage
+            /tmp/artifacts/PBSDeck/app_unpacked.zip
+          tag_name: ${{ github.ref_name }}
+          body: |
+            PBS Deck Release
+          draft: true
+          generate_release_notes: true
+          prerelease: contains(github.ref, 'pre')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

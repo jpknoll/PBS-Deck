@@ -1,0 +1,70 @@
+{
+  "pbs": {
+    "appUrl": "https://www.pbs.org/video/",
+    "controllerNavigation": true
+  },
+  "youtube": {
+    "appUrl": "https://youtube.com/tv",
+    "userAgent": "Mozilla/5.0 (PS4; Leanback Shell) Gecko/20100101 Firefox/65.0 LeanbackShell/01.00.01.75 Sony PS4/ (PS4, , no, CH)",
+    "zoomFactor": 0.5
+  },
+  "netflix": {
+    "appUrl": "https://www.netflix.com"
+  },
+  "amazonLuna": {
+    "appUrl": "https://luna.amazon.com"
+  },
+  "disneyPlus": {
+    "appUrl": "https://www.disneyplus.com/"
+  },
+  "crunchyroll": {
+    "recommendStandaloneApp": true,
+    "appUrl": "https://github.com/aarron-lee/crunchyroll-linux?tab=readme-ov-file#crunchyroll-for-linux"
+  },
+  "amazonPrimeVideo": {
+    "appUrl": "https://www.amazon.com/video"
+  },
+  "appleTv": {
+    "appUrl": "https://tv.apple.com/"
+  },
+  "curiosityStream": {
+    "appUrl": "https://curiositystream.com"
+  },
+  "geForceNow": {
+    "appUrl": "https://play.geforcenow.com/mall/"
+  },
+  "hboMax": {
+    "appUrl": "https://www.max.com/"
+  },
+  "hulu": {
+    "appUrl": "https://www.hulu.com/"
+  },
+  "paramountPlus": {
+    "appUrl": "https://www.paramountplus.com/"
+  },
+  "peacock": {
+    "appUrl": "https://www.peacocktv.com/"
+  },
+  "plex": {
+    "recommendStandaloneApp": true,
+    "appUrl": "https://flathub.org/apps/tv.plex.PlexHTPC"
+  },
+  "slingTV": {
+    "appUrl": "https://www.sling.com"
+  },
+  "spotify": {
+    "appUrl": "https://open.spotify.com/"
+  },
+  "vimeo": {
+    "appUrl": "https://vimeo.com/"
+  },
+  "xboxGamePassStreaming": {
+    "appUrl": "https://www.xbox.com/play"
+  },
+  "youtubeMusic": {
+    "appUrl": "https://music.youtube.com/"
+  },
+  "youTubeTV": {
+    "appUrl": "https://tv.youtube.com/"
+  }
+}
