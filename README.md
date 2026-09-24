@@ -76,6 +76,27 @@ Add a desktop shortcut instead:
 $HOME/.local/bin/pbs-deck-add-desktop-entry pbs
 ```
 
+## DOM inspection (verifying the nav selectors)
+
+The engine emits what it sees without any browser tooling:
+
+```bash
+PBS_DECK_DOM_DUMP=1 $HOME/Applications/PBS-Deck.AppImage --appname=pbs --no-sandbox
+```
+
+Every focused candidate is printed to stdout as it's scanned (`attach`, `load`,
+`mutation`, or after SPA navigation):
+
+```
+==== PBS DOM DUMP (mutation) ====
+url: https://www.pbs.org/video/
+candidates: 42
+(y,x) WxH  tag#id.class  href  "text"
+```
+
+Use it to confirm the focus ring matches the real grid (and to re-tune the
+`FOCUS_SELECTOR` in `src/nav/navEngine.js` when PBS changes their markup).
+
 ## Custom app URL (unchanged from upstream)
 
 ```bash

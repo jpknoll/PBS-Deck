@@ -194,6 +194,19 @@ const registerNavHandlers = () => {
   ipcMain.on("nav:exit", (event) => {
     BrowserWindow.fromWebContents(event.sender)?.close();
   });
+
+  ipcMain.on("nav:dom-dump", (_event, payload) => {
+    console.log(`\n==== PBS DOM DUMP (${payload?.reason || "?"}) ====`);
+    console.log(`url: ${payload?.url || ""}`);
+    console.log(`title: ${payload?.title || ""}`);
+    console.log(`candidates: ${payload?.count ?? 0}`);
+    for (const c of payload?.candidates || []) {
+      const label = c.href || (c.role ? `role=${c.role}` : "");
+      console.log(
+        `(${c.y},${c.x}) ${c.w}x${c.h}  ${c.tag}${c.id ? "#" + c.id : ""}${c.cls ? "." + c.cls : ""}  ${label}  ${c.text ? JSON.stringify(c.text) : ""}`,
+      );
+    }
+  });
 };
 
 app.whenReady().then(async () => {

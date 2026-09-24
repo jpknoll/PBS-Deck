@@ -37,7 +37,7 @@ const FOCUS_SELECTOR = [
   'a[href]',
 ].join(', ');
 
-function createNavEngine({ ipcRenderer } = {}) {
+function createNavEngine({ ipcRenderer, domDump = false } = {}) {
   let focusables = [];
   let current = null;
   let ring = null;
@@ -50,6 +50,9 @@ function createNavEngine({ ipcRenderer } = {}) {
   let rescanTimer = null;
   let pollingTimer = null;
   let observer = null;
+  let lastUrl = null;
+  let locationTimer = null;
+  let navDumpTimer = null;
 
   function ensureReady() {
     if (document.readyState === 'loading') {
@@ -120,6 +123,44 @@ function createNavEngine({ ipcRenderer } = {}) {
     return result;
   }
 
+  function candidateInfo(el) {
+    const rect = el.getBoundingClientRect();
+    return {
+      tag: el.tagName.toLowerCase(),
+      id: el.id || '',
+      cls: typeof el.className === 'string' ? el.className.slice(0, 100) : '',
+      href: el.getAttribute('href') || '',
+      role: el.getAttribute('role') || '',
+      text: (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60),
+      x: Math.round(rect.left),
+      y: Math.round(rect.top),
+      w: Math.round(rect.width),
+      h: Math.round(rect.height),
+    };
+  }
+
+  function emitDump(reason) {
+    if (!ipcRenderer || !domDump) return;
+    const candidates = scanFocusables()
+      .map(candidateInfo)
+      .sort((a, b) => a.y - b.y || a.x - b.x);
+    ipcRenderer.send('nav:dom-dump', {
+      url: location.href,
+      reason,
+      title: (document.title || '').slice(0, 100),
+      count: candidates.length,
+      candidates,
+    });
+  }
+
+  function scheduleDumpAfterNav() {
+    if (!domDump || navDumpTimer) return;
+    navDumpTimer = setTimeout(() => {
+      navDumpTimer = null;
+      emitDump('nav');
+    }, 1500);
+  }
+
   function scheduleRescan() {
     if (rescanTimer) return;
     rescanTimer = setTimeout(() => {
@@ -137,6 +178,7 @@ function createNavEngine({ ipcRenderer } = {}) {
         setCurrent(fresh[0]);
       }
       updateRing();
+      emitDump('mutation');
     }, RESCAN_THROTTLE_MS);
   }
 
@@ -472,6 +514,19 @@ function createNavEngine({ ipcRenderer } = {}) {
 
     window.addEventListener('scroll', updateRing, { passive: true });
     window.addEventListener('resize', updateRing);
+
+    if (domDump) {
+      setTimeout(() => emitDump('attach'), 1500);
+      window.addEventListener('load', () => emitDump('load'));
+      window.addEventListener('popstate', scheduleDumpAfterNav);
+      lastUrl = location.href;
+      locationTimer = setInterval(() => {
+        if (location.href !== lastUrl) {
+          lastUrl = location.href;
+          scheduleDumpAfterNav();
+        }
+      }, 1000);
+    }
 
     pollingTimer = setInterval(poll, POLL_MS);
   }
