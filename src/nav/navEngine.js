@@ -6,6 +6,7 @@ const SCROLL_STEP_FACTOR = 0.8;
 const RING_COLOR = '#f2c10e';
 const OVERLAY_BG = 'rgba(10, 14, 20, 0.82)';
 const OVERLAY_TEXT = '#ffffff';
+const NOISE_CLASS = /(MyListButton|KabobMenu|Station(Button|Menu)|ChangeStationButton|VideoPlayerOverlay|Search(ButtonLink|Menu|Button)|SocialLinks|footer|Newsletter|DonateRow)/i;
 const MIN_FOCUS_WIDTH = 24;
 const MIN_FOCUS_HEIGHT = 24;
 const MIN_FOCUS_AREA = 1200;
@@ -123,6 +124,7 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
     if (style.display === 'none' || style.visibility === 'hidden') return false;
     if (+style.opacity === 0) return false;
     if (el.getAttribute('aria-hidden') === 'true') return false;
+    if (NOISE_CLASS.test(String(el.className || ''))) return false;
     const rect = el.getBoundingClientRect();
     if (rect.width < MIN_FOCUS_WIDTH || rect.height < MIN_FOCUS_HEIGHT) return false;
     if (rect.width * rect.height < MIN_FOCUS_AREA) return false;
