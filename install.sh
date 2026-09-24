@@ -8,7 +8,7 @@ fi
 APP=PBS-Deck
 REPO=jpknoll/PBS-Deck
 RELEASE_URL=https://api.github.com/repos/$REPO/releases/latest
-RAW_BASE=https://raw.githubusercontent.com/$REPO/refs/heads/main
+RAW_BASE=https://raw.githubusercontent.com/$REPO/refs/heads/master
 
 APPIMAGE_PATH=$HOME/Applications/$APP.AppImage
 LAUNCHER_PATH=$HOME/.local/bin/pbs-deck
