@@ -99,6 +99,23 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
     document.head.appendChild(styleEl);
   }
 
+  function inSidewaysScrollContainer(el) {
+    let node = el.parentElement;
+    while (node && node !== document.body && node !== document.documentElement) {
+      const st = window.getComputedStyle(node);
+      const ox = st.overflowX;
+      if (
+        (ox === 'auto' || ox === 'scroll' || ox === 'hidden') &&
+        node.scrollWidth > node.clientWidth * 1.5 + 2
+      ) {
+        return true;
+      }
+      if (st.position === 'fixed' || st.position === 'sticky') return false;
+      node = node.parentElement;
+    }
+    return false;
+  }
+
   function isVisible(el) {
     if (!(el instanceof Element)) return false;
     if (el.closest('script, style, noscript, template')) return false;
@@ -109,6 +126,10 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
     const rect = el.getBoundingClientRect();
     if (rect.width < MIN_FOCUS_WIDTH || rect.height < MIN_FOCUS_HEIGHT) return false;
     if (rect.width * rect.height < MIN_FOCUS_AREA) return false;
+    const vw = window.innerWidth;
+    if ((rect.right < -4 || rect.left > vw + 4) && !inSidewaysScrollContainer(el)) {
+      return false;
+    }
     return true;
   }
 
@@ -148,6 +169,7 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
       url: location.href,
       reason,
       title: (document.title || '').slice(0, 100),
+      viewport: `${window.innerWidth}x${window.innerHeight}`,
       count: candidates.length,
       candidates,
     });

@@ -71,11 +71,20 @@ function createWindow() {
   const win = new BrowserWindow({
     fullscreen: useFullScreen,
     autoHideMenuBar: true,
+    ...(useFullScreen
+      ? {}
+      : {
+          width: parseInt(process.env.WINDOW_WIDTH, 10) || 800,
+          height: parseInt(process.env.WINDOW_HEIGHT, 10) || 600,
+        }),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       ...(controllerNavigation
-        ? { preload: path.join(__dirname, "./src/nav/preload-nav.js") }
+        ? {
+            sandbox: false,
+            preload: path.join(__dirname, "./src/nav/preload-nav.js"),
+          }
         : {}),
     },
   });
@@ -91,6 +100,25 @@ function createWindow() {
       : {},
   );
 
+  if (process.env.PBS_DECK_DOM_DUMP === "1") {
+    win.webContents.on("did-start-loading", () =>
+      console.log("[pbs-probe] did-start-loading"),
+    );
+    win.webContents.on(
+      "did-finish-load",
+      () => console.log("[pbs-probe] did-finish-load", win.webContents.getURL()),
+    );
+    win.webContents.on(
+      "did-fail-load",
+      (_e, code, desc, url) =>
+        console.log("[pbs-probe] did-fail-load", code, desc, url),
+    );
+    win.webContents.on(
+      "render-process-gone",
+      (_e, details) => console.log("[pbs-probe] render-process-gone", details),
+    );
+  }
+
   if (zoomFactor && zoomFactor > 0) {
     win.webContents.on("did-finish-load", () => {
       win.webContents.setZoomFactor(zoomFactor);
@@ -100,6 +128,7 @@ function createWindow() {
 
 function handleCustomAppUrl() {
   const appUrl = process.env.APP_URL;
+  const domDumpProbe = process.env.PBS_DECK_DOM_DUMP === "1";
 
   let zoomFactor;
   let userAgent = {};
@@ -140,9 +169,21 @@ function handleCustomAppUrl() {
     fullscreen: useFullScreen,
     autoHideMenuBar: disableMenuBar,
     show,
+    ...(useFullScreen
+      ? {}
+      : {
+          width: parseInt(process.env.WINDOW_WIDTH, 10) || 800,
+          height: parseInt(process.env.WINDOW_HEIGHT, 10) || 600,
+        }),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      ...(domDumpProbe
+        ? {
+            sandbox: false,
+            preload: path.join(__dirname, "./src/nav/preload-nav.js"),
+          }
+        : {}),
     },
   });
   if (disableMenuBar) {
@@ -155,6 +196,25 @@ function handleCustomAppUrl() {
   }
 
   win.loadURL(appUrl, userAgent);
+
+  if (domDumpProbe) {
+    win.webContents.on("did-start-loading", () =>
+      console.log("[pbs-probe] did-start-loading"),
+    );
+    win.webContents.on(
+      "did-finish-load",
+      () => console.log("[pbs-probe] did-finish-load", win.webContents.getURL()),
+    );
+    win.webContents.on(
+      "did-fail-load",
+      (_e, code, desc, url) =>
+        console.log("[pbs-probe] did-fail-load", code, desc, url),
+    );
+    win.webContents.on(
+      "render-process-gone",
+      (_e, details) => console.log("[pbs-probe] render-process-gone", details),
+    );
+  }
 
   if (zoomFactor && zoomFactor > 0) {
     win.webContents.on("did-finish-load", () => {
@@ -199,6 +259,7 @@ const registerNavHandlers = () => {
     console.log(`\n==== PBS DOM DUMP (${payload?.reason || "?"}) ====`);
     console.log(`url: ${payload?.url || ""}`);
     console.log(`title: ${payload?.title || ""}`);
+    console.log(`viewport: ${payload?.viewport || ""}`);
     console.log(`candidates: ${payload?.count ?? 0}`);
     for (const c of payload?.candidates || []) {
       const label = c.href || (c.role ? `role=${c.role}` : "");
