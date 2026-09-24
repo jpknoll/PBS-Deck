@@ -59,6 +59,25 @@ rm -f $HOME/.local/share/applications/pbsdeck*.desktop
 $HOME/.local/bin/pbs-deck pbs
 ```
 
+## Signing in (PBS Passport)
+
+On the first launch while signed out, a **Sign in to PBS Passport** card appears
+and is pre-focused:
+
+- **A / Enter** on the card starts the sign-in flow: it opens the site's Sign-In
+  modal, then the PBS SSO page (`login.publicmediasignin.org`) loads in the same
+  window. Pick **Sign in with Email** (or Google / Apple / Facebook) and type
+  your credentials.
+- While typing in a text field all gamepad shortcuts are muted, so the Steam
+  Deck / SteamOS on-screen keyboard (or a real keyboard/mouse during setup)
+  works without fighting the focus engine. **B** exits the field after typing.
+- **Any D-pad / stick movement (or B)** on the card dismisses it and you can
+  browse the free (~30-day) catalog unsigned.
+
+The session persists across launches (cookies live in the app's userData), so
+this is a **one-time** step: authenticate once with the OSK/keyboard, and every
+later launch is fully controller-driven with Passport unlocked.
+
 ## Steam Deck / HTPC Game Mode
 
 Your distro must ship `steamos-add-to-steam` (SteamOS, Bazzite, SteamFork, …):

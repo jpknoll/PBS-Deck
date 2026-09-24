@@ -54,6 +54,9 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
   let lastUrl = null;
   let locationTimer = null;
   let navDumpTimer = null;
+  let signInCard = null;
+  let signInCta = null;
+  let signInDismissed = false;
 
   function ensureReady() {
     if (document.readyState === 'loading') {
@@ -96,6 +99,49 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
       .pbs-deck-hints table { border-collapse: collapse; }
       .pbs-deck-hints td { padding: 2px 10px; }
       .pbs-deck-hints td:first-child { color: ${RING_COLOR}; font-weight: 700; text-align: right; white-space: nowrap; }
+      .pbs-deck-signin {
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 2147483646;
+        pointer-events: none;
+        box-sizing: border-box;
+        max-width: 560px;
+        width: calc(100vw - 64px);
+        background: rgba(10, 14, 20, 0.94);
+        color: ${OVERLAY_TEXT};
+        font: 15px/1.55 system-ui, -apple-system, sans-serif;
+        text-align: center;
+        padding: 30px 36px 34px;
+        border: 2px solid ${RING_COLOR};
+        border-radius: 16px;
+        box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+      }
+      .pbs-deck-signin h1 {
+        margin: 0 0 10px;
+        font-size: 24px;
+        line-height: 1.2;
+        color: ${RING_COLOR};
+      }
+      .pbs-deck-signin p { margin: 0 0 6px; color: #d8dde4; }
+      .pbs-deck-signin .pbs-deck-signin-cta {
+        margin-top: 18px;
+        display: inline-block;
+        padding: 12px 30px;
+        font: 700 16px/1.2 system-ui, sans-serif;
+        color: #14181d;
+        background: ${RING_COLOR};
+        border: none;
+        border-radius: 9px;
+        box-shadow: 0 0 0 3px rgba(242, 193, 14, 0.35);
+        cursor: pointer;
+      }
+      .pbs-deck-signin .pbs-deck-signin-note {
+        margin-top: 12px;
+        font-size: 12.5px;
+        color: #98a2ad;
+      }
     `;
     document.head.appendChild(styleEl);
   }
@@ -120,6 +166,7 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
   function isVisible(el) {
     if (!(el instanceof Element)) return false;
     if (el.closest('script, style, noscript, template')) return false;
+    if (el.closest('.pbs-deck-signin, .pbs-deck-hints')) return false;
     const style = window.getComputedStyle(el);
     if (style.display === 'none' || style.visibility === 'hidden') return false;
     if (+style.opacity === 0) return false;
@@ -203,6 +250,7 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
       }
       updateRing();
       emitDump('mutation');
+      showSignInCardIfNeeded();
     }, RESCAN_THROTTLE_MS);
   }
 
@@ -308,6 +356,10 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
 
   function setCurrent(el) {
     if (!el || !el.isConnected) return;
+    if (signInCard && el !== signInCta) {
+      signInDismissed = true;
+      hideSignInCard();
+    }
     current = el;
     try {
       el.focus({ preventScroll: true });
@@ -328,6 +380,10 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
   }
 
   function activate() {
+    if (current === signInCta) {
+      startSignIn();
+      return;
+    }
     if (!current || !current.isConnected) return;
     if (
       current.tagName === 'INPUT' ||
@@ -345,6 +401,11 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
   }
 
   function goBack() {
+    if (signInCard) {
+      signInDismissed = true;
+      hideSignInCard();
+      return;
+    }
     if (window.history.length > 1) {
       window.history.back();
       return;
@@ -385,6 +446,65 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
   function toggleHints() {
     if (hintsVisible) hideHints();
     else showHints();
+  }
+
+  function findSignInButton() {
+    for (const el of document.querySelectorAll('button, a')) {
+      if (
+        isVisible(el) &&
+        el.textContent &&
+        el.textContent.trim() === 'Sign In'
+      ) {
+        return el;
+      }
+    }
+    return null;
+  }
+
+  function isSignedIn() {
+    return !findSignInButton() && !document.querySelector(
+      'input[type="email"], input[name="email"], input[type="password"], input[name="password"]',
+    );
+  }
+
+  function hideSignInCard() {
+    if (signInCard) {
+      signInCard.remove();
+      signInCard = null;
+      signInCta = null;
+    }
+  }
+
+  function buildSignInCard() {
+    injectStyles();
+    signInCard = document.createElement('div');
+    signInCard.className = 'pbs-deck-signin';
+    signInCard.innerHTML = `
+      <h1>Sign in to PBS Passport</h1>
+      <p>Passport unlocks the full catalog &mdash; seasons, episodes and the full archive.</p>
+      <p>Pick <b>Sign In</b> to log in with PBS (or Google / Apple / Facebook).</p>
+      <button class="pbs-deck-signin-cta">Sign In</button>
+      <div class="pbs-deck-signin-note">A / Enter to sign in &middot; B / dpad to keep browsing free shows</div>
+    `;
+    document.documentElement.appendChild(signInCard);
+    signInCta = signInCard.querySelector('.pbs-deck-signin-cta');
+    signInCta.addEventListener('click', startSignIn);
+  }
+
+  function showSignInCardIfNeeded() {
+    if (signInCard || signInDismissed) return;
+    if (isSignedIn()) return;
+    buildSignInCard();
+    setCurrent(signInCta);
+    if (domDump) console.log('[pbs-deck] sign-in card shown');
+  }
+
+  function startSignIn() {
+    signInDismissed = true;
+    hideSignInCard();
+    const real = findSignInButton();
+    if (real) real.click();
+    if (domDump) console.log('[pbs-deck] sign-in flow started');
   }
 
   function focusSearch() {
@@ -531,6 +651,7 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
     focusables = scanFocusables();
     current = focusables[0] || null;
     if (current) setCurrent(current);
+    showSignInCardIfNeeded();
     showHints();
 
     observer = new MutationObserver(() => scheduleRescan());
