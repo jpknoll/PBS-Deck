@@ -90,6 +90,10 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
     });
   }
 
+  if (ipcRenderer) {
+    ipcRenderer.on('nav:probe-back', () => goBack());
+  }
+
   function ensureReady() {
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', attach, { once: true });
@@ -520,7 +524,16 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
     current.click();
   }
 
-  function goBack() {
+  function isHomePage() {
+  try {
+    const path = new URL(location.href).pathname.replace(/\/+$/, '');
+    return path === '';
+  } catch (ignored) {
+    return false;
+  }
+}
+
+function goBack() {
     if (signInCard) {
       signInDismissed = true;
       hideSignInCard();
@@ -530,7 +543,7 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
       hideConfirmCard();
       return;
     }
-    if (window.history.length > 1) {
+    if (!isHomePage() && window.history.length > 1) {
       window.history.back();
       return;
     }
@@ -920,7 +933,6 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
     window.addEventListener('resize', updateRing);
 
     if (domDump) {
-      window.__pbsDeckTest = { goBack };
       setTimeout(() => emitDump('attach'), 1500);
       window.addEventListener('load', () => emitDump('load'));
       window.addEventListener('popstate', scheduleDumpAfterNav);

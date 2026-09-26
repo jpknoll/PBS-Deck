@@ -273,7 +273,7 @@ const registerProbeKeys = (webContents) => {
     if (webContents.isDestroyed()) return;
     if (process.env.PBS_DECK_PROBE_BACK === "1") {
       console.log("[pbs-probe] invoking goBack");
-      webContents.executeJavaScript("window.__pbsDeckTest && window.__pbsDeckTest.goBack()");
+      webContents.send("nav:probe-back");
     }
     if (keys.length) {
       console.log("[pbs-probe] sending keys:", keys.join(", "));

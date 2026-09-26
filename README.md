@@ -24,7 +24,7 @@ a castlabs (Widevine) Electron window, plus a **controller navigation layer**
 |---|---|
 | D-pad / stick | Move focus (hold to repeat, TV-style) |
 | A / Enter | Select / play |
-| B (or Esc / back) | Go back one page; **B on the PBS home page exits the app** |
+| B (or Esc / back) | Back one page; **B on the home hub asks to exit** (confirm modal) |
 | Y | Jump to search box (opens the search menu if needed) |
 | X | Play / pause — drives the embedded player via key injection |
 | LB / RB | Seek 10s on a video page, otherwise scroll a row |
