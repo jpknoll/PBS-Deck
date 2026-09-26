@@ -127,6 +127,7 @@ function createWindow() {
 
   registerProbeClicker(win.webContents);
   registerProbeKeys(win.webContents);
+  registerProbeArrows(win.webContents);
 }
 
 function handleCustomAppUrl() {
@@ -198,6 +199,10 @@ function handleCustomAppUrl() {
     createTray(win);
   }
 
+  win.on("closed", () => {
+    windows.delete(win);
+  });
+
   win.loadURL(appUrl, userAgent);
 
   if (domDumpProbe) {
@@ -227,6 +232,7 @@ function handleCustomAppUrl() {
 
   registerProbeClicker(win.webContents);
   registerProbeKeys(win.webContents);
+  registerProbeArrows(win.webContents);
 }
 
 function showDefaultApp() {
@@ -261,6 +267,45 @@ const sendKeyTo = (wc, keyCode) => {
   wc.sendInputEvent({ type: "keyDown", keyCode });
   wc.sendInputEvent({ type: "char", keyCode });
   wc.sendInputEvent({ type: "keyUp", keyCode });
+};
+
+const registerProbeArrows = (webContents) => {
+  if (process.env.PBS_DECK_PROBE_ARROWS !== "1") return;
+  const findAndLog = (tag) => {
+    webContents
+      .executeJavaScript(`(() => {
+        const out = [];
+        const mk = (el) => {
+          const r = el.getBoundingClientRect();
+          return [
+            el.tagName.toLowerCase(),
+            (el.getAttribute('aria-label') || '').slice(0, 30),
+            String(el.className || '').slice(0, 60),
+            Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height),
+            el.textContent.trim().replace(/\\s+/g, ' ').slice(0, 20),
+          ].join(' | ');
+        };
+        const re = /(chevron|arrow|next|scroll|carousel)/i;
+        for (const el of document.querySelectorAll('button, a, [role="button"], svg, img, i, span')) {
+          const cls = String(el.className || '');
+          const aria = el.getAttribute('aria-label') || '';
+          const tf = el.getAttribute('data-testid') || '';
+          if (re.test(cls) || re.test(aria) || re.test(tf)) {
+            const host = el.closest('button, a') || el;
+            out.push(mk(host));
+          }
+        }
+        return [...new Set(out)];
+      })()`)
+      .then((rows) => {
+        console.log(`[pbs-probe] arrows (${tag}):`);
+        for (const row of rows) console.log("  " + row);
+      })
+      .catch(() => {});
+  };
+  findAndLog("load");
+  setTimeout(() => findAndLog("+3s"), 3000);
+  setTimeout(() => findAndLog("+6s"), 6000);
 };
 
 const registerProbeKeys = (webContents) => {

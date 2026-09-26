@@ -137,6 +137,9 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
         outline: none !important;
         box-shadow: none !important;
       }
+      .splide__arrow {
+        display: none !important;
+      }
       .pbs-deck-hints {
         position: fixed;
         left: 50%;
