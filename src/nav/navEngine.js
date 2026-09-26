@@ -107,6 +107,7 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
 
   if (ipcRenderer) {
     ipcRenderer.on('nav:probe-back', () => goBack());
+    ipcRenderer.on('nav:probe-x', () => handlePlayPause());
   }
 
   function ensureReady() {
@@ -767,19 +768,34 @@ function goBack() {
     }, 1400);
   }
 
+  function clickCenter() {
+    const rect = (current || document.body).getBoundingClientRect();
+    const x = Math.round(rect.left + rect.width / 2);
+    const y = Math.round(rect.top + rect.height / 2);
+    if (ipcRenderer) {
+      ipcRenderer.send('nav:mouse', { x, y });
+    }
+  }
+
   function handlePlayPause() {
     const player = findPlayer();
-    if (player && player.getBoundingClientRect().width > 0) {
+    const fallback = current && current.tagName === 'IFRAME' && /player\.pbs\.org/.test(current.src || '') ? current : null;
+    const target = player || fallback;
+    if (target && target.getBoundingClientRect().width > 0) {
       try {
-        player.focus();
+        target.focus();
       } catch (ignored) {
         // continue
       }
-      player.scrollIntoView({ block: 'center', inline: 'nearest' });
-      sendKey('Space');
+      target.scrollIntoView({ block: 'center', inline: 'nearest' });
+      if (document.fullscreenElement) {
+        clickCenter();
+      } else {
+        sendKey('Space');
+      }
       requestPlayerFullscreen();
       showToast('\u25b6\ufe0f / \u23f8 play / pause');
-      if (domDump) console.log('[pbs-deck] play/pause key sent to player');
+      if (domDump) console.log('[pbs-deck] play/pause sent' + (document.fullscreenElement ? ' (click)' : ' (key)'));
       return true;
     }
     const video = document.querySelector('video');
@@ -822,6 +838,17 @@ function goBack() {
   if (typeof document !== 'undefined') {
     document.addEventListener('fullscreenchange', () => {
       if (domDump) console.log(`[pbs-deck] fullscreenchange: ${!!document.fullscreenElement}`);
+      if (document.fullscreenElement) {
+        const p = findPlayer();
+        if (p) {
+          setCurrent(p);
+          try {
+            p.focus({ preventScroll: true });
+          } catch (ignored) {
+            // best-effort cross-origin focus
+          }
+        }
+      }
     });
   }
 

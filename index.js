@@ -264,21 +264,50 @@ const sendKeyTo = (wc, keyCode) => {
 };
 
 const registerProbeKeys = (webContents) => {
-  const keys = (process.env.PBS_DECK_PROBE_KEY || "")
+  const tokens = (process.env.PBS_DECK_PROBE_KEY || "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
-  if (keys.length === 0 && process.env.PBS_DECK_PROBE_BACK !== "1") return;
+  const hasKeys = tokens.some((t) => !/^\d+$/.test(t));
+  if (!hasKeys && process.env.PBS_DECK_PROBE_BACK !== "1") return;
+  const logUrl = (tag) => {
+    webContents
+      .executeJavaScript("location.href")
+      .then((u) => console.log(`[pbs-probe] ${tag}: ${u}`))
+      .catch(() => {});
+  };
+  let i = 0;
+  const step = () => {
+    if (webContents.isDestroyed()) return;
+    if (i >= tokens.length) return;
+    const token = tokens[i++];
+    if (/^\d+$/.test(token)) {
+      const delay = Number(token);
+      console.log(`[pbs-probe] waiting ${delay}ms`);
+      setTimeout(() => {
+        logUrl("after wait");
+        step();
+      }, delay);
+      return;
+    }
+    console.log(`[pbs-probe] sending key: ${token}`);
+    if (token === "X") {
+      webContents.send("nav:probe-x");
+    } else {
+      sendKeyTo(webContents, token);
+    }
+    setTimeout(() => {
+      logUrl("after key " + token);
+      step();
+    }, 600);
+  };
   setTimeout(() => {
     if (webContents.isDestroyed()) return;
     if (process.env.PBS_DECK_PROBE_BACK === "1") {
       console.log("[pbs-probe] invoking goBack");
       webContents.send("nav:probe-back");
     }
-    if (keys.length) {
-      console.log("[pbs-probe] sending keys:", keys.join(", "));
-      for (const k of keys) sendKeyTo(webContents, k);
-    }
+    step();
   }, 9000);
 };
 
@@ -328,6 +357,13 @@ const registerNavHandlers = () => {
     wc.sendInputEvent({ type: "keyDown", keyCode });
     wc.sendInputEvent({ type: "char", keyCode });
     wc.sendInputEvent({ type: "keyUp", keyCode });
+  });
+
+  ipcMain.on("nav:mouse", (event, { x, y } = {}) => {
+    const wc = event.sender;
+    if (!wc || wc.isDestroyed() || typeof x !== "number" || typeof y !== "number") return;
+    wc.sendInputEvent({ type: "mouseDown", x, y, button: "left", clickCount: 1 });
+    wc.sendInputEvent({ type: "mouseUp", x, y, button: "left", clickCount: 1 });
   });
 
   ipcMain.on("nav:dom-dump", (_event, payload) => {
