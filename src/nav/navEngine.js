@@ -59,6 +59,7 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
   let signInCta = null;
   let signInDismissed = false;
   let playerPlaying = null;
+  let hintsVisibleBeforePlay = false;
   let confirmCard = null;
   let confirmExitBtn = null;
   let confirmCancelBtn = null;
@@ -67,12 +68,25 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
     window.addEventListener('message', (e) => {
       if (!e.origin || e.origin.indexOf('player.pbs.org') === -1) return;
       let data = e.data;
+      if (typeof data === 'string' && data.charAt(0) === '{') {
+        try {
+          data = JSON.parse(data);
+        } catch (ignored) {
+          data = null;
+        }
+      }
       if (data && data.event) {
         if (data.event === 'videojs:play' && playerPlaying !== true) {
           playerPlaying = true;
+          hintsVisibleBeforePlay = hintsVisible || !!overlay;
+          hideHints();
+          updateRing();
           showToast('\u25b6\ufe0f playing');
         } else if (data.event === 'videojs:pause' && playerPlaying !== false) {
           playerPlaying = false;
+          if (hintsVisibleBeforePlay) showHints();
+          hintsVisibleBeforePlay = false;
+          updateRing();
           showToast('\u23f8 paused');
         }
       }
@@ -85,7 +99,7 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
             payload = '[unserializable]';
           }
         }
-        console.log(`[pbs-deck] msg from ${e.origin}: ${payload}`);
+        console.log(`[pbs-deck] msg from ${e.origin} (${typeof data}): ${payload}`);
       }
     });
   }
@@ -783,6 +797,11 @@ function goBack() {
   }
 
   function updateRing() {
+    if (playerPlaying) {
+      if (ring) ring.style.display = 'none';
+      if (domDump) console.log('[pbs-deck] ring hidden: playing');
+      return;
+    }
     if (!current || !current.isConnected) {
       if (ring) ring.style.display = 'none';
       return;
