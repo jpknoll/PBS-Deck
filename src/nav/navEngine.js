@@ -59,6 +59,9 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
   let signInCta = null;
   let signInDismissed = false;
   let playerPlaying = null;
+  let confirmCard = null;
+  let confirmExitBtn = null;
+  let confirmCancelBtn = null;
 
   if (typeof window !== 'undefined') {
     window.addEventListener('message', (e) => {
@@ -188,6 +191,52 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
         transition: opacity 260ms ease;
         white-space: nowrap;
       }
+      .pbs-deck-confirm {
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 2147483646;
+        pointer-events: none;
+        box-sizing: border-box;
+        max-width: 460px;
+        width: calc(100vw - 64px);
+        background: rgba(10, 14, 20, 0.95);
+        color: ${OVERLAY_TEXT};
+        font: 15px/1.55 system-ui, -apple-system, sans-serif;
+        text-align: center;
+        padding: 28px 34px 30px;
+        border: 2px solid ${RING_COLOR};
+        border-radius: 16px;
+        box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+      }
+      .pbs-deck-confirm h1 {
+        margin: 0 0 8px;
+        font-size: 22px;
+        color: ${RING_COLOR};
+      }
+      .pbs-deck-confirm p { margin: 0 0 4px; color: #d8dde4; }
+      .pbs-deck-confirm-actions {
+        margin-top: 20px;
+        display: flex;
+        justify-content: center;
+        gap: 14px;
+      }
+      .pbs-deck-confirm button {
+        min-width: 150px;
+        padding: 11px 22px;
+        font: 700 15px/1.2 system-ui, sans-serif;
+        color: ${OVERLAY_TEXT};
+        background: rgba(255, 255, 255, 0.08);
+        border: 1.5px solid rgba(255, 255, 255, 0.35);
+        border-radius: 9px;
+        cursor: pointer;
+      }
+      .pbs-deck-confirm button.pbs-deck-confirm-danger {
+        color: #14181d;
+        background: ${RING_COLOR};
+        border-color: ${RING_COLOR};
+      }
     `;
     document.head.appendChild(styleEl);
   }
@@ -212,7 +261,7 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
   function isVisible(el) {
     if (!(el instanceof Element)) return false;
     if (el.closest('script, style, noscript, template')) return false;
-    if (el.closest('.pbs-deck-signin, .pbs-deck-hints')) return false;
+    if (el.closest('.pbs-deck-signin, .pbs-deck-hints, .pbs-deck-confirm')) return false;
     const style = window.getComputedStyle(el);
     if (style.display === 'none' || style.visibility === 'hidden') return false;
     if (+style.opacity === 0) return false;
@@ -351,6 +400,14 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
   }
 
   function moveDirection(dir) {
+    if (confirmCard) {
+      if (current === confirmExitBtn) {
+        setCurrent(confirmCancelBtn);
+      } else {
+        setCurrent(confirmExitBtn);
+      }
+      return;
+    }
     focusables = scanFocusables();
     if (focusables.length === 0) return;
 
@@ -434,6 +491,15 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
   }
 
   function activate() {
+    if (current === confirmExitBtn) {
+      hideConfirmCard();
+      exitApp();
+      return;
+    }
+    if (current === confirmCancelBtn) {
+      hideConfirmCard();
+      return;
+    }
     if (current === signInCta) {
       startSignIn();
       return;
@@ -460,11 +526,15 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
       hideSignInCard();
       return;
     }
+    if (confirmCard) {
+      hideConfirmCard();
+      return;
+    }
     if (window.history.length > 1) {
       window.history.back();
       return;
     }
-    if (ipcRenderer) ipcRenderer.send('nav:exit');
+    showConfirmCard();
   }
 
   function scrollBy(dx) {
@@ -501,6 +571,41 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
   function toggleHints() {
     if (hintsVisible) hideHints();
     else showHints();
+  }
+
+  function hideConfirmCard() {
+    if (confirmCard) {
+      confirmCard.remove();
+      confirmCard = null;
+      confirmExitBtn = null;
+      confirmCancelBtn = null;
+    }
+  }
+
+  function showConfirmCard() {
+    injectStyles();
+    confirmCard = document.createElement('div');
+    confirmCard.className = 'pbs-deck-confirm';
+    confirmCard.innerHTML = `
+      <h1>Exit PBS Deck?</h1>
+      <p>Leave the app and return to Steam?</p>
+      <div class="pbs-deck-confirm-actions">
+        <button class="pbs-deck-confirm-danger">Exit</button>
+        <button>Keep Watching</button>
+      </div>
+    `;
+    document.documentElement.appendChild(confirmCard);
+    confirmExitBtn = confirmCard.querySelector('.pbs-deck-confirm-danger');
+    confirmCancelBtn = confirmCard.querySelector('button:last-of-type');
+    confirmExitBtn.addEventListener('click', exitApp);
+    confirmCancelBtn.addEventListener('click', hideConfirmCard);
+    setCurrent(confirmCancelBtn);
+    if (domDump) console.log('[pbs-deck] exit confirmation shown');
+  }
+
+  function exitApp() {
+    if (ipcRenderer) ipcRenderer.send('nav:exit');
+    else if (domDump) console.log('[pbs-deck] exit requested');
   }
 
   function findSignInButton() {
@@ -815,6 +920,7 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
     window.addEventListener('resize', updateRing);
 
     if (domDump) {
+      window.__pbsDeckTest = { goBack };
       setTimeout(() => emitDump('attach'), 1500);
       window.addEventListener('load', () => emitDump('load'));
       window.addEventListener('popstate', scheduleDumpAfterNav);

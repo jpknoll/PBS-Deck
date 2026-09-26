@@ -268,9 +268,14 @@ const registerProbeKeys = (webContents) => {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
-  if (keys.length === 0) return;
+  if (keys.length === 0 && process.env.PBS_DECK_PROBE_BACK !== "1") return;
   setTimeout(() => {
-    if (!webContents.isDestroyed()) {
+    if (webContents.isDestroyed()) return;
+    if (process.env.PBS_DECK_PROBE_BACK === "1") {
+      console.log("[pbs-probe] invoking goBack");
+      webContents.executeJavaScript("window.__pbsDeckTest && window.__pbsDeckTest.goBack()");
+    }
+    if (keys.length) {
       console.log("[pbs-probe] sending keys:", keys.join(", "));
       for (const k of keys) sendKeyTo(webContents, k);
     }
