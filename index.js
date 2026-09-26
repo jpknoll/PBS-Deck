@@ -329,6 +329,17 @@ const registerNavHandlers = () => {
     wc.sendInputEvent({ type: "char", keyCode });
     wc.sendInputEvent({ type: "keyUp", keyCode });
   });
+  ipcMain.on("nav:player", (event, { playing } = {}) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win || win.isDestroyed()) return;
+    const fs = !!playing;
+    if (win.isFullScreen() !== fs) {
+      win.setFullScreen(fs);
+      if (process.env.PBS_DECK_DOM_DUMP === "1") {
+        console.log(`[pbs-probe] fullscreen: ${fs}`);
+      }
+    }
+  });
 
   ipcMain.on("nav:dom-dump", (_event, payload) => {
     console.log(`\n==== PBS DOM DUMP (${payload?.reason || "?"}) ====`);

@@ -60,6 +60,7 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
   let signInDismissed = false;
   let playerPlaying = null;
   let hintsVisibleBeforePlay = false;
+  let mastheadEl = null;
   let confirmCard = null;
   let confirmExitBtn = null;
   let confirmCancelBtn = null;
@@ -80,12 +81,16 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
           playerPlaying = true;
           hintsVisibleBeforePlay = hintsVisible || !!overlay;
           hideHints();
+          hideMasthead();
+          setPlaying(true);
           updateRing();
           showToast('\u25b6\ufe0f playing');
         } else if (data.event === 'videojs:pause' && playerPlaying !== false) {
           playerPlaying = false;
           if (hintsVisibleBeforePlay) showHints();
           hintsVisibleBeforePlay = false;
+          restoreMasthead();
+          setPlaying(false);
           updateRing();
           showToast('\u23f8 paused');
         }
@@ -130,6 +135,13 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
         box-shadow: 0 0 0 3px rgba(10, 14, 20, 0.55), 0 0 18px rgba(242, 193, 14, 0.5);
         transition: top 90ms ease-out, left 90ms ease-out, width 90ms ease-out, height 90ms ease-out;
         background: transparent;
+      }
+      html.pbs-deck-playing header[class*="Navigation-module"] {
+        display: none !important;
+      }
+      iframe[src*="player.pbs.org"]:focus {
+        outline: none !important;
+        box-shadow: none !important;
       }
       .pbs-deck-hints {
         position: fixed;
@@ -558,6 +570,7 @@ function goBack() {
       return;
     }
     if (!isHomePage() && window.history.length > 1) {
+      leavePlayerPlayback();
       window.history.back();
       return;
     }
@@ -796,6 +809,46 @@ function goBack() {
     return true;
   }
 
+  function setPlaying(on) {
+    document.documentElement.classList.toggle('pbs-deck-playing', on);
+    if (ipcRenderer) ipcRenderer.send('nav:player', { playing: !!on });
+  }
+
+  function findMasthead() {
+    const el = document.querySelector(
+      'header[class*="Navigation-module"], header[class*="Masthead"], header',
+    );
+    return el && el.isConnected ? el : null;
+  }
+
+  function hideMasthead() {
+    const m = findMasthead();
+    if (m && !m.__pbsHidden) {
+      mastheadEl = m;
+      m.__pbsHidden = true;
+      m.style.display = 'none';
+      if (domDump) console.log(`[pbs-deck] masthead hidden (${m.tagName}.${(m.className || '').toString().split(' ')[0]})`);
+    }
+  }
+
+  function restoreMasthead() {
+    if (mastheadEl && mastheadEl.__pbsHidden) {
+      mastheadEl.style.display = '';
+      mastheadEl.__pbsHidden = false;
+      if (domDump) console.log('[pbs-deck] masthead restored');
+    }
+    mastheadEl = null;
+  }
+
+  function leavePlayerPlayback() {
+    if (!playerPlaying) restoreMasthead();
+    playerPlaying = null;
+    hintsVisibleBeforePlay = false;
+    restoreMasthead();
+    setPlaying(false);
+    updateRing();
+  }
+
   function updateRing() {
     if (playerPlaying) {
       if (ring) ring.style.display = 'none';
@@ -948,10 +1001,21 @@ function goBack() {
     observer = new MutationObserver(() => scheduleRescan());
     observer.observe(document.documentElement, { childList: true, subtree: true });
 
+    setPlaying(false);
+
     window.addEventListener('scroll', updateRing, { passive: true });
     window.addEventListener('resize', updateRing);
 
     if (domDump) {
+      const probe = document.querySelector('a.NavLink-module-scss-module__CrqL6W__nav_link, [class*="home_link"]');
+      if (probe) {
+        const chain = [];
+        for (let el = probe.parentElement; el && chain.length < 8; el = el.parentElement) {
+          const cs = getComputedStyle(el);
+          chain.push(`<${el.tagName}.${(el.className || '').toString().split(' ').filter((c) => /(Mast|Head|Nav|Wrap|Brand|Logo|Top)/.test(c)).join('.') || '.' + (el.className || '').toString().split(' ')[0] || ''} pos=${cs.position} rect=${Math.round(el.getBoundingClientRect().height)}px>`);
+        }
+        console.log('[pbs-deck] nav ancestors: ' + chain.join(' → '));
+      }
       setTimeout(() => emitDump('attach'), 1500);
       window.addEventListener('load', () => emitDump('load'));
       window.addEventListener('popstate', scheduleDumpAfterNav);
