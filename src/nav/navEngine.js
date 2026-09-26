@@ -301,6 +301,53 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
     return true;
   }
 
+  const START_TEXT_RE = [
+    /^resume( watching| episode| now)?$/i,
+    /^start( watching| now| episode)?$/i,
+    /^watch( now| free| episode| episodes)?$/i,
+    /^play( now| episode)?$/i,
+  ];
+
+  function findStartButton() {
+    const els = document.querySelectorAll('a[href], button');
+    let best = null;
+    let bestKey = 99;
+    let bestTop = Infinity;
+    for (const el of els) {
+      if (!isVisible(el)) continue;
+      const text = (el.textContent || '').trim().replace(/\s+/g, ' ') || (el.getAttribute('aria-label') || '').trim();
+      if (!text || /preview|trailer/i.test(text)) continue;
+      let key = -1;
+      for (let i = 0; i < START_TEXT_RE.length; i++) {
+        if (START_TEXT_RE[i].test(text)) {
+          key = i;
+          break;
+        }
+      }
+      if (key < 0) continue;
+      const rect = el.getBoundingClientRect();
+      if (rect.bottom < 0 || rect.top > window.innerHeight + 4) continue;
+      if (key < bestKey || (key === bestKey && rect.top < bestTop)) {
+        bestKey = key;
+        bestTop = rect.top;
+        best = el;
+      }
+    }
+    return best;
+  }
+
+  function scheduleStartHighlight() {
+    setTimeout(() => {
+      const player = findPlayer();
+      if (player && player.getBoundingClientRect().width > 0) return;
+      const start = findStartButton();
+      if (start) {
+        setCurrent(start);
+        if (domDump) console.log(`[pbs-deck] auto-highlight start button: ${(start.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40)}`);
+      }
+    }, 900);
+  }
+
   function scanFocusables() {
     const seen = new Set();
     const result = [];
@@ -704,8 +751,9 @@ function goBack() {
     if (signInCard && isSignedIn()) {
       hideSignInCard();
       signInDismissed = false;
-      if ((!current || !current.isConnected) && focusables[0]) {
-        setCurrent(focusables[0]);
+      if (!current || !current.isConnected) {
+        const start = findStartButton();
+        setCurrent(start && start.isConnected ? start : focusables[0]);
       }
       if (domDump) console.log('[pbs-deck] sign-in card hidden (session detected)');
     }
@@ -1012,6 +1060,7 @@ function goBack() {
       current = focusables[0] || null;
       if (current) setCurrent(current);
     }
+    scheduleStartHighlight();
     setTimeout(showSignInCardIfNeeded, 700);
     showHints();
 
