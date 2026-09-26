@@ -811,6 +811,10 @@ function goBack() {
   }
 
   function updateRing() {
+    if (current && current.tagName === 'IFRAME' && /player\.pbs\.org/.test(current.src || '')) {
+      if (ring) ring.style.display = 'none';
+      return;
+    }
     if (playerPlaying) {
       if (ring) ring.style.display = 'none';
       if (domDump) console.log('[pbs-deck] ring hidden: playing');
