@@ -299,12 +299,12 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
       if (current && !current.isConnected) {
         current = null;
       }
+      refreshSignIn();
       if (!current && fresh.length) {
         setCurrent(fresh[0]);
       }
       updateRing();
       emitDump('mutation');
-      showSignInCardIfNeeded();
     }, RESCAN_THROTTLE_MS);
   }
 
@@ -517,9 +517,7 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
   }
 
   function isSignedIn() {
-    return !findSignInButton() && !document.querySelector(
-      'input[type="email"], input[name="email"], input[type="password"], input[name="password"]',
-    );
+    return !findSignInButton();
   }
 
   function hideSignInCard() {
@@ -551,7 +549,27 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
     if (isSignedIn()) return;
     buildSignInCard();
     setCurrent(signInCta);
-    if (domDump) console.log('[pbs-deck] sign-in card shown');
+    if (domDump) {
+      const si = findSignInButton();
+      console.log(
+        `[pbs-deck] sign-in card shown; culprit=${si ? `${si.tagName}.${si.className} aria=${si.getAttribute('aria-label')} text=${JSON.stringify(si.textContent && si.textContent.trim())}` : 'none'}`,
+      );
+    }
+  }
+
+  function refreshSignIn() {
+    if (!signInCard && !(signInDismissed && !isSignedIn())) {
+      showSignInCardIfNeeded();
+      return;
+    }
+    if (signInCard && isSignedIn()) {
+      hideSignInCard();
+      signInDismissed = false;
+      if ((!current || !current.isConnected) && focusables[0]) {
+        setCurrent(focusables[0]);
+      }
+      if (domDump) console.log('[pbs-deck] sign-in card hidden (session detected)');
+    }
   }
 
   function startSignIn() {
@@ -787,7 +805,7 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
       current = focusables[0] || null;
       if (current) setCurrent(current);
     }
-    showSignInCardIfNeeded();
+    setTimeout(showSignInCardIfNeeded, 700);
     showHints();
 
     observer = new MutationObserver(() => scheduleRescan());
