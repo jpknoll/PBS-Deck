@@ -80,6 +80,7 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
           playerPlaying = true;
           hintsVisibleBeforePlay = hintsVisible || !!overlay;
           hideHints();
+          requestPlayerFullscreen();
           updateRing();
           showToast('\u25b6\ufe0f playing');
         } else if (data.event === 'videojs:pause' && playerPlaying !== false) {
@@ -776,6 +777,7 @@ function goBack() {
       }
       player.scrollIntoView({ block: 'center', inline: 'nearest' });
       sendKey('Space');
+      requestPlayerFullscreen();
       showToast('\u25b6\ufe0f / \u23f8 play / pause');
       if (domDump) console.log('[pbs-deck] play/pause key sent to player');
       return true;
@@ -801,7 +803,30 @@ function goBack() {
     return true;
   }
 
+  function requestPlayerFullscreen() {
+    if (document.fullscreenElement) return;
+    const p = document.querySelector('iframe[src*="player.pbs.org"]');
+    if (!p || typeof p.requestFullscreen !== 'function') return;
+    if (domDump) console.log('[pbs-deck] requesting player fullscreen');
+    Promise.resolve(p.requestFullscreen()).catch(() => {
+      if (domDump) console.log('[pbs-deck] fullscreen request rejected');
+    });
+  }
+
+  function exitPlayerFullscreen() {
+    if (document.fullscreenElement && typeof document.exitFullscreen === 'function') {
+      Promise.resolve(document.exitFullscreen()).catch(() => {});
+    }
+  }
+
+  if (typeof document !== 'undefined') {
+    document.addEventListener('fullscreenchange', () => {
+      if (domDump) console.log(`[pbs-deck] fullscreenchange: ${!!document.fullscreenElement}`);
+    });
+  }
+
   function leavePlayerPlayback() {
+    exitPlayerFullscreen();
     if (!playerPlaying) return;
     const hadHints = hintsVisibleBeforePlay;
     playerPlaying = null;
@@ -981,15 +1006,19 @@ function goBack() {
       }
       setTimeout(() => emitDump('attach'), 1500);
       window.addEventListener('load', () => emitDump('load'));
-      window.addEventListener('popstate', scheduleDumpAfterNav);
-      lastUrl = location.href;
-      locationTimer = setInterval(() => {
-        if (location.href !== lastUrl) {
-          lastUrl = location.href;
-          scheduleDumpAfterNav();
-        }
-      }, 1000);
     }
+    window.addEventListener('popstate', () => {
+      leavePlayerPlayback();
+      if (domDump) scheduleDumpAfterNav();
+    });
+    lastUrl = location.href;
+    locationTimer = setInterval(() => {
+      if (location.href !== lastUrl) {
+        lastUrl = location.href;
+        leavePlayerPlayback();
+        if (domDump) scheduleDumpAfterNav();
+      }
+    }, 1000);
 
     pollingTimer = setInterval(poll, POLL_MS);
   }
