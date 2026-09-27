@@ -35,6 +35,7 @@ const FOCUS_SELECTOR = [
   'input[aria-label]',
   'button',
   '[role="button"]',
+  'select',
   'a[href]',
   'iframe[src*="player.pbs.org"]',
 ].join(', ');

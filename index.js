@@ -286,8 +286,9 @@ const registerProbeArrows = (webContents) => {
             el.textContent.trim().replace(/\\s+/g, ' ').slice(0, 20),
           ].join(' | ');
         };
-        const re = /(chevron|arrow|next|scroll|carousel)/i;
-        for (const el of document.querySelectorAll('button, a, [role="button"], svg, img, i, span')) {
+        const re = /(chevron|arrow|next|scroll|carousel|season|select)/i;
+        for (const el of document.querySelectorAll('button, a, [role="button"], [role="listbox"], [role="combobox"], select, svg, img, i, span')) {
+          if (el.tagName.toLowerCase() === 'select') { out.push(mk(el)); continue; }
           const cls = String(el.className || '');
           const aria = el.getAttribute('aria-label') || '';
           const tf = el.getAttribute('data-testid') || '';
