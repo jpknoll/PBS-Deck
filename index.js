@@ -8,6 +8,7 @@ const {
   ipcMain,
   Menu,
 } = require("electron");
+const { autoUpdater } = require("electron-updater");
 const { initializeSettings } = require("./src/settings");
 const { initializeTray, createTray } = require("./src/appIndicator");
 
@@ -416,6 +417,44 @@ const registerProbeClicker = (webContents) => {
   }, 1000);
 };
 
+const setupAutoUpdate = () => {
+  if (!app.isPackaged) {
+    console.log("[auto-update] disabled (unpackaged dev run)");
+    return;
+  }
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.logger = console;
+  autoUpdater.on("error", (err) => {
+    console.error("[auto-update] error:", err.message || err);
+    for (const w of BrowserWindow.getAllWindows()) {
+      w.webContents.send("pbs-deck:update-failed");
+    }
+  });
+  autoUpdater.on("update-available", () => {
+    console.log("[auto-update] update available, downloading…");
+  });
+  autoUpdater.on("update-not-available", () => {
+    console.log("[auto-update] already up to date");
+  });
+  autoUpdater.on("download-progress", (p) => {
+    if (p && Math.floor(p.percent) % 25 === 0) {
+      console.log(`[auto-update] download ${Math.floor(p.percent)}%`);
+    }
+  });
+  autoUpdater.on("update-downloaded", () => {
+    console.log("[auto-update] update downloaded; installs on quit");
+    for (const w of BrowserWindow.getAllWindows()) {
+      w.webContents.send("pbs-deck:update-ready");
+    }
+  });
+  setTimeout(() => {
+    autoUpdater
+      .checkForUpdatesAndNotify()
+      .catch((err) => console.error("[auto-update] check failed:", err.message || err));
+  }, 15000);
+};
+
 const registerNavHandlers = () => {
   ipcMain.on("nav:exit", (event) => {
     BrowserWindow.fromWebContents(event.sender)?.close();
@@ -456,6 +495,7 @@ app.whenReady().then(async () => {
   console.log("components ready:", components.status());
   registerNavHandlers();
   createWindow();
+  setupAutoUpdate();
 });
 
 app.on("window-all-closed", () => {

@@ -123,6 +123,8 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
   if (ipcRenderer) {
     ipcRenderer.on('nav:probe-back', () => goBack());
     ipcRenderer.on('nav:probe-x', () => handlePlayPause());
+    ipcRenderer.on('pbs-deck:update-ready', () => showToast('Update ready \u2014 installs on exit'));
+    ipcRenderer.on('pbs-deck:update-failed', () => showToast('Update check failed'));
   }
 
   function ensureReady() {
