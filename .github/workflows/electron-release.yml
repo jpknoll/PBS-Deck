@@ -20,7 +20,7 @@ jobs:
     steps:
       - name: set git global safe directory
         run: |
-          pacman -Syu git pnpm tree zip unzip --noconfirm
+          pacman -Syu git nodejs npm tree zip unzip --noconfirm
           git config --global --add safe.directory $(realpath .)
 
       - name: Checkout repository
@@ -28,21 +28,19 @@ jobs:
 
       - name: build AppImage
         run: |
-          pnpm install
-          pnpm run build --linux
+          NPM_CONFIG_ALLOW_GIT=all npm ci
+          npm run build -- --linux --publish never
           chmod +x dist/PBS_Deck_v*_linux.AppImage
-        continue-on-error: true
 
       - name: build zip
         run: |
-          pnpm install
-          pnpm run build:unpacked
+          npm run build:unpacked -- --publish never
           zip -r dist/app_unpacked.zip dist/linux-unpacked
-        continue-on-error: true
 
       - name: show files
         run: |
           ls ./dist/PBS_Deck_v*_linux.AppImage
+          ls ./dist/latest-linux.yml
           ls ./dist/app_unpacked.zip
 
       - name: Publish Artifacts
@@ -51,6 +49,7 @@ jobs:
           name: PBSDeck
           path: |
             ./dist/PBS_Deck_v*_linux.AppImage
+            ./dist/latest-linux.yml
             ./dist/app_unpacked.zip
 
   publish:
@@ -72,6 +71,7 @@ jobs:
         with:
           files: |
             /tmp/artifacts/PBSDeck/PBS_Deck_v*_linux.AppImage
+            /tmp/artifacts/PBSDeck/latest-linux.yml
             /tmp/artifacts/PBSDeck/app_unpacked.zip
           tag_name: ${{ github.ref_name }}
           body: |
