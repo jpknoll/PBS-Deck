@@ -66,6 +66,14 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
   let confirmCard = null;
   let confirmExitBtn = null;
   let confirmCancelBtn = null;
+  let seasonBtn = null;
+  let seasonSelect = null;
+  let seasonControls = new Map();
+  let seasonPicker = null;
+  let seasonOpts = [];
+  let seasonIdx = 0;
+  let seasonTimer = null;
+  let seasonAttempts = 0;
 
   if (typeof window !== 'undefined') {
     window.addEventListener('message', (e) => {
@@ -277,6 +285,83 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
         background: ${RING_COLOR};
         border-color: ${RING_COLOR};
       }
+      select[aria-label^="Select Season"],
+      select[name="season-picker"],
+      select[class*="SeasonNavigator"] {
+        opacity: 0 !important;
+        pointer-events: none !important;
+      }
+      .pbs-deck-season {
+        position: fixed;
+        display: none;
+        z-index: 2147483645;
+        box-sizing: border-box;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 0 14px;
+        border: 2px solid rgba(255, 255, 255, 0.35);
+        border-radius: 8px;
+        background: rgba(20, 26, 34, 0.92);
+        color: ${OVERLAY_TEXT};
+        font: 600 15px/1.2 system-ui, -apple-system, sans-serif;
+        white-space: nowrap;
+        cursor: pointer;
+        vertical-align: middle;
+      }
+      .pbs-deck-season::after {
+        content: "\u25be";
+        color: ${RING_COLOR};
+        font-size: 18px;
+        line-height: 1;
+      }
+      .pbs-deck-season-popup {
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 2147483646;
+        pointer-events: none;
+        box-sizing: border-box;
+        min-width: 260px;
+        max-width: 70vw;
+        background: rgba(10, 14, 20, 0.95);
+        color: ${OVERLAY_TEXT};
+        font: 15px/1.5 system-ui, -apple-system, sans-serif;
+        padding: 20px 18px 18px;
+        border: 2px solid ${RING_COLOR};
+        border-radius: 14px;
+        box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+      }
+      .pbs-deck-season-popup h1 {
+        margin: 0 0 14px;
+        font-size: 17px;
+        color: ${RING_COLOR};
+      }
+      .pbs-deck-season-options {
+        display: grid;
+        gap: 6px;
+        max-height: 52vh;
+        overflow-y: auto;
+      }
+      .pbs-deck-season-options button {
+        display: block;
+        width: 100%;
+        padding: 9px 14px;
+        text-align: left;
+        font: 600 15px/1.2 system-ui, sans-serif;
+        color: ${OVERLAY_TEXT};
+        background: transparent;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 9px;
+        cursor: pointer;
+        pointer-events: auto;
+      }
+      .pbs-deck-season-options button.hi {
+        color: #14181d;
+        background: ${RING_COLOR};
+        border-color: ${RING_COLOR};
+      }
     `;
     document.head.appendChild(styleEl);
   }
@@ -391,6 +476,7 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
     for (const el of document.querySelectorAll(FOCUS_SELECTOR)) {
       if (seen.has(el)) continue;
       seen.add(el);
+      if (isSeasonSelect(el)) continue;
       if (isVisible(el)) result.push(el);
     }
     return result;
@@ -456,6 +542,7 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
       if (current && !current.isConnected) {
         current = null;
       }
+      ensureSeasonControl();
       refreshSignIn();
       if (!current && fresh.length) {
         setCurrent(fresh[0]);
@@ -508,6 +595,10 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
   }
 
   function moveDirection(dir) {
+    if (seasonPicker) {
+      moveSeasonDir(dir);
+      return;
+    }
     if (confirmCard) {
       if (current === confirmExitBtn) {
         setCurrent(confirmCancelBtn);
@@ -610,6 +701,10 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
     }
     if (current === signInCta) {
       startSignIn();
+      return;
+    }
+    if (current === seasonBtn) {
+      openSeasonPicker();
       return;
     }
     if (!current || !current.isConnected) return;
@@ -724,6 +819,191 @@ function goBack() {
   function exitApp() {
     if (ipcRenderer) ipcRenderer.send('nav:exit');
     else if (domDump) console.log('[pbs-deck] exit requested');
+  }
+
+  function isSeasonSelect(el) {
+    return (
+      /Select Season/i.test(el.getAttribute('aria-label') || '') ||
+      /season[-_]?picker|ElementNavigator./i.test(el.getAttribute('name') || '') ||
+      /SeasonNavigator/i.test(el.className || '')
+    );
+  }
+
+  function findSeasonSelects() {
+    if (typeof document === 'undefined') return [];
+    return Array.from(document.querySelectorAll('select')).filter(isSeasonSelect);
+  }
+
+  function primarySeasonSelect() {
+    return findSeasonSelects()[0] || null;
+  }
+
+  function seasonAnchorRect(sel) {
+    if (!sel) return null;
+    const rect = sel.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0 ? rect : null;
+  }
+
+  function currentSeasonSelect() {
+    return primarySeasonSelect() || (seasonSelect && seasonSelect.isConnected ? seasonSelect : null);
+  }
+
+  function seasonLabelOf(sel) {
+    const label = sel && sel.selectedOptions[0]
+      ? (sel.selectedOptions[0].textContent || '').trim().replace(/\s+/g, ' ')
+      : '';
+    return label || 'Season';
+  }
+
+  function refreshSeasonLabel() {
+    if (!seasonBtn || !seasonBtn.isConnected) return;
+    seasonBtn.textContent = seasonLabelOf(currentSeasonSelect());
+  }
+
+  function positionSeasonButton() {
+    if (!seasonBtn || !seasonBtn.isConnected) return;
+    const sel = primarySeasonSelect();
+    const rect = seasonAnchorRect(sel);
+    if (!rect) {
+      seasonBtn.style.display = 'none';
+      return;
+    }
+    seasonBtn.style.display = 'flex';
+    seasonBtn.style.top = `${rect.top}px`;
+    seasonBtn.style.left = `${rect.left}px`;
+    seasonBtn.style.width = `${Math.max(Math.round(rect.width), 40)}px`;
+    seasonBtn.style.height = `${Math.max(Math.round(rect.height), 24)}px`;
+  }
+
+  function ensureSeasonButton() {
+    if (seasonBtn && seasonBtn.isConnected) {
+      seasonSelect = primarySeasonSelect();
+      refreshSeasonLabel();
+      positionSeasonButton();
+      return true;
+    }
+    const sel = primarySeasonSelect();
+    if (!sel) {
+      cleanupSeasonControl();
+      return false;
+    }
+    injectStyles();
+    seasonBtn = document.createElement('button');
+    seasonBtn.type = 'button';
+    seasonBtn.className = 'pbs-deck-season';
+    document.documentElement.appendChild(seasonBtn);
+    seasonBtn.addEventListener('click', () => openSeasonPicker(sel));
+    seasonSelect = sel;
+    refreshSeasonLabel();
+    positionSeasonButton();
+    if (domDump) console.log('[pbs-deck] season control built');
+    return true;
+  }
+
+  function cleanupSeasonControl() {
+    closeSeasonPicker();
+    if (seasonBtn && seasonBtn.isConnected) seasonBtn.style.display = 'none';
+    seasonSelect = null;
+  }
+
+  function ensureSeasonControl() {
+    if (!primarySeasonSelect()) {
+      cleanupSeasonControl();
+      return false;
+    }
+    return ensureSeasonButton();
+  }
+
+  function scheduleSeasonControl() {
+    if (seasonTimer) return;
+    seasonAttempts = 0;
+    seasonTimer = setInterval(() => {
+      if (!ensureSeasonControl()) {
+        if (++seasonAttempts >= 12) {
+          clearInterval(seasonTimer);
+          seasonTimer = null;
+        }
+      }
+    }, 1000);
+  }
+
+  function updateSeasonPicker() {
+    if (!seasonPicker) return;
+    const rows = seasonOpts
+      .map(
+        (o, i) =>
+          `<button type="button" data-i="${i}" class="${i === seasonIdx ? 'hi' : ''}">${(o.textContent || '')
+            .trim()
+            .replace(/\s+/g, ' ')}</button>`,
+      )
+      .join('');
+    seasonPicker.innerHTML = `
+      <h1>Select Season</h1>
+      <div class="pbs-deck-season-options">${rows}</div>
+    `;
+    const list = seasonPicker.querySelector('.pbs-deck-season-options');
+    list.addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-i]');
+      if (b) applySeason(Number(b.dataset.i));
+    });
+    const row = seasonPicker.querySelector('button.hi');
+    if (row) row.scrollIntoView({ block: 'nearest' });
+  }
+
+  function openSeasonPicker(sel) {
+    if (seasonPicker) return;
+    const target = sel || currentSeasonSelect();
+    if (!target) return;
+    const opts = Array.from(target.options).filter((o) => (o.value || o.textContent || '').trim());
+    if (!opts.length) return;
+    seasonSelect = primarySeasonSelect() || target;
+    seasonOpts = opts;
+    seasonIdx = Math.max(0, Math.min(target.selectedIndex, opts.length - 1));
+    seasonPicker = document.createElement('div');
+    seasonPicker.className = 'pbs-deck-season-popup';
+    document.documentElement.appendChild(seasonPicker);
+    updateSeasonPicker();
+    updateRing();
+    if (domDump) console.log('[pbs-deck] season picker opened');
+  }
+
+  function moveSeasonDir(dir) {
+    if (!seasonPicker || !seasonOpts.length) return;
+    if (dir === 'down') seasonIdx = Math.min(seasonOpts.length - 1, seasonIdx + 1);
+    else if (dir === 'up') seasonIdx = Math.max(0, seasonIdx - 1);
+    else return;
+    updateSeasonPicker();
+  }
+
+  function applySeason(index) {
+    const sel = currentSeasonSelect();
+    if (!sel || !seasonOpts.length) return;
+    const i = typeof index === 'number' ? index : seasonIdx;
+    const opt = seasonOpts[i];
+    if (!opt) return;
+    try {
+      if (String(sel.value) !== opt.value) {
+        sel.value = opt.value;
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    } catch (ignored) {
+      // some drivers reject programmatic value changes
+    }
+    closeSeasonPicker();
+    if (domDump) {
+      console.log('[pbs-deck] season applied: ' + ((opt.textContent || '').trim().replace(/\s+/g, ' ')));
+    }
+  }
+
+  function closeSeasonPicker() {
+    if (seasonPicker) {
+      seasonPicker.remove();
+      seasonPicker = null;
+    }
+    seasonOpts = [];
+    refreshSeasonLabel();
+    if (seasonBtn && seasonBtn.isConnected) setCurrent(seasonBtn);
+    updateRing();
   }
 
   function findSignInButton() {
@@ -954,6 +1234,10 @@ function goBack() {
   }
 
   function updateRing() {
+    if (seasonPicker) {
+      if (ring) ring.style.display = 'none';
+      return;
+    }
     if (current && current.tagName === 'IFRAME' && /player\.pbs\.org/.test(current.src || '')) {
       if (ring) ring.style.display = 'none';
       return;
@@ -1045,6 +1329,11 @@ function goBack() {
 
   function handleButtonDown(name) {
     if (guardControls()) return;
+    if (seasonPicker) {
+      if (name === 'A') applySeason();
+      else if (name === 'B') closeSeasonPicker();
+      return;
+    }
     switch (name) {
       case 'A':
         activate();
@@ -1104,14 +1393,21 @@ function goBack() {
       if (current) setCurrent(current);
     }
     scheduleStartHighlight();
+    scheduleSeasonControl();
     setTimeout(showSignInCardIfNeeded, 700);
     showHints();
 
     observer = new MutationObserver(() => scheduleRescan());
     observer.observe(document.documentElement, { childList: true, subtree: true });
 
-    window.addEventListener('scroll', updateRing, { passive: true });
-    window.addEventListener('resize', updateRing);
+    window.addEventListener('scroll', () => {
+      updateRing();
+      positionSeasonButton();
+    }, { passive: true });
+    window.addEventListener('resize', () => {
+      updateRing();
+      positionSeasonButton();
+    });
 
     if (domDump) {
       const probe = document.querySelector('a.NavLink-module-scss-module__CrqL6W__nav_link, [class*="home_link"]');
@@ -1129,6 +1425,7 @@ function goBack() {
     window.addEventListener('popstate', () => {
       leavePlayerPlayback();
       scheduleStartHighlight();
+      scheduleSeasonControl();
       if (domDump) scheduleDumpAfterNav();
     });
     lastUrl = location.href;
@@ -1137,6 +1434,7 @@ function goBack() {
         lastUrl = location.href;
         leavePlayerPlayback();
         scheduleStartHighlight();
+        scheduleSeasonControl();
         if (domDump) scheduleDumpAfterNav();
       }
     }, 1000);
