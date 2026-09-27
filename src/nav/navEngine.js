@@ -289,6 +289,7 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
     if (!(el instanceof Element)) return false;
     if (el.closest('script, style, noscript, template')) return false;
     if (el.closest('.pbs-deck-signin, .pbs-deck-hints, .pbs-deck-confirm')) return false;
+    if (el.closest('[class*="ContinueWatching" i], [class*="LiveTVRow" i]')) return false;
     const style = window.getComputedStyle(el);
     if (style.display === 'none' || style.visibility === 'hidden') return false;
     if (+style.opacity === 0) return false;
