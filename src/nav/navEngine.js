@@ -146,6 +146,12 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
       .splide__arrow {
         display: none !important;
       }
+      a[class*="ShopMenuItem"], a[class*="DonateMenuItem"] {
+        display: none !important;
+      }
+      li:has(a[class*="ShopMenuItem"]), li:has(a[class*="DonateMenuItem"]) {
+        display: none !important;
+      }
       .pbs-deck-hints {
         position: fixed;
         left: 50%;
