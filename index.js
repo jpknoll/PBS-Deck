@@ -233,6 +233,7 @@ function handleCustomAppUrl() {
   registerProbeClicker(win.webContents);
   registerProbeKeys(win.webContents);
   registerProbeArrows(win.webContents);
+  registerProbeShow(win.webContents);
 }
 
 function showDefaultApp() {
@@ -306,6 +307,28 @@ const registerProbeArrows = (webContents) => {
   findAndLog("load");
   setTimeout(() => findAndLog("+3s"), 3000);
   setTimeout(() => findAndLog("+6s"), 6000);
+};
+
+const registerProbeShow = (webContents) => {
+  if (process.env.PBS_DECK_PROBE_SHOW !== "1") return;
+  setTimeout(() => {
+    webContents
+      .executeJavaScript(`(() => {
+        const els = [...document.querySelectorAll('a[href^="/show/"]')];
+        const vis = els.find((el) => {
+          const r = el.getBoundingClientRect();
+          return r.width > 0 && r.height > 0 && r.top < innerHeight && r.bottom > 0;
+        });
+        if (vis) {
+          vis.scrollIntoView({ block: "center" });
+          setTimeout(() => vis.click(), 400);
+          return "clicked show: " + vis.getAttribute("href");
+        }
+        return "no visible show poster";
+      })()`)
+      .then((s) => console.log("[pbs-probe] " + s))
+      .catch(() => {});
+  }, 9000);
 };
 
 const registerProbeKeys = (webContents) => {

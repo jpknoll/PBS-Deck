@@ -54,6 +54,8 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
   let observer = null;
   let lastUrl = null;
   let locationTimer = null;
+  let startHiTimer = null;
+  let startHiAttempts = 0;
   let navDumpTimer = null;
   let signInCard = null;
   let signInCta = null;
@@ -78,17 +80,21 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
       if (data && data.event) {
         if (data.event === 'videojs:play' && playerPlaying !== true) {
           playerPlaying = true;
-          hintsVisibleBeforePlay = hintsVisible || !!overlay;
-          hideHints();
-          requestPlayerFullscreen();
-          updateRing();
-          showToast('\u25b6\ufe0f playing');
+          if (isVideoRoute()) {
+            hintsVisibleBeforePlay = hintsVisible || !!overlay;
+            hideHints();
+            requestPlayerFullscreen();
+            updateRing();
+            showToast('\u25b6\ufe0f playing');
+          }
         } else if (data.event === 'videojs:pause' && playerPlaying !== false) {
           playerPlaying = false;
-          if (hintsVisibleBeforePlay) showHints();
-          hintsVisibleBeforePlay = false;
-          updateRing();
-          showToast('\u23f8 paused');
+          if (isVideoRoute()) {
+            if (hintsVisibleBeforePlay) showHints();
+            hintsVisibleBeforePlay = false;
+            updateRing();
+            showToast('\u23f8 paused');
+          }
         }
       }
       if (domDump) {
@@ -290,6 +296,7 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
     if (el.closest('script, style, noscript, template')) return false;
     if (el.closest('.pbs-deck-signin, .pbs-deck-hints, .pbs-deck-confirm')) return false;
     if (el.closest('[class*="ContinueWatching" i], [class*="LiveTVRow" i]')) return false;
+    if (el.tagName === 'IFRAME' && /player\.pbs\.org/.test(el.getAttribute('src') || '')) return false;
     const style = window.getComputedStyle(el);
     if (style.display === 'none' || style.visibility === 'hidden') return false;
     if (+style.opacity === 0) return false;
@@ -341,15 +348,34 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
   }
 
   function scheduleStartHighlight() {
-    setTimeout(() => {
+    if (startHiTimer) return;
+    startHiAttempts = 0;
+    startHiTimer = setInterval(() => {
+      if (/\/video\//.test(location.pathname)) {
+        stopStartHighlight();
+        return;
+      }
       const player = findPlayer();
-      if (player && player.getBoundingClientRect().width > 0) return;
+      if (player && player.getBoundingClientRect().width > 0) {
+        stopStartHighlight();
+        return;
+      }
       const start = findStartButton();
       if (start) {
         setCurrent(start);
         if (domDump) console.log(`[pbs-deck] auto-highlight start button: ${(start.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40)}`);
+        stopStartHighlight();
+        return;
       }
-    }, 900);
+      if (++startHiAttempts >= 8) stopStartHighlight();
+    }, 600);
+  }
+
+  function stopStartHighlight() {
+    if (startHiTimer) {
+      clearInterval(startHiTimer);
+      startHiTimer = null;
+    }
   }
 
   function scanFocusables() {
@@ -795,7 +821,12 @@ function goBack() {
     if (domDump) console.log('[pbs-deck] search entry not found');
   }
 
+  function isVideoRoute() {
+    return /^\/video(\/|$)|^\/livestream(\/|$)/.test(location.pathname);
+  }
+
   function findPlayer() {
+    if (!isVideoRoute()) return null;
     return document.querySelector('iframe[src*="player.pbs.org"]');
   }
 
@@ -872,6 +903,7 @@ function goBack() {
   }
 
   function requestPlayerFullscreen() {
+    if (!isVideoRoute()) return;
     if (document.fullscreenElement) return;
     const p = document.querySelector('iframe[src*="player.pbs.org"]');
     if (!p || typeof p.requestFullscreen !== 'function') return;
@@ -1089,6 +1121,7 @@ function goBack() {
     }
     window.addEventListener('popstate', () => {
       leavePlayerPlayback();
+      scheduleStartHighlight();
       if (domDump) scheduleDumpAfterNav();
     });
     lastUrl = location.href;
@@ -1096,6 +1129,7 @@ function goBack() {
       if (location.href !== lastUrl) {
         lastUrl = location.href;
         leavePlayerPlayback();
+        scheduleStartHighlight();
         if (domDump) scheduleDumpAfterNav();
       }
     }, 1000);
