@@ -32,6 +32,11 @@ const FOCUS_SELECTOR = [
   'a[href*="/show/"]',
   'button[type="submit"]',
   'input[type="search"]',
+  'input[type="email"]',
+  'input[type="password"]',
+  'input[type="text"]',
+  'input[type="tel"]',
+  'input[type="number"]',
   'input[aria-label]',
   'button',
   '[role="button"]',
@@ -396,6 +401,7 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
     if (+style.opacity === 0) return false;
     if (el.getAttribute('aria-hidden') === 'true') return false;
     if (el.tagName !== 'INPUT' && NOISE_CLASS.test(String(el.className || ''))) return false;
+    if (el.tagName === 'INPUT' && /(newsletter|subscribe)/i.test(`${el.id || ''} ${el.name || ''} ${el.className || ''}`)) return false;
     const rect = el.getBoundingClientRect();
     if (rect.width < MIN_FOCUS_WIDTH || rect.height < MIN_FOCUS_HEIGHT) return false;
     if (rect.width * rect.height < MIN_FOCUS_AREA) return false;
@@ -777,6 +783,27 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
   }
 }
 
+function isAuthPage() {
+  try {
+    const { hostname, pathname } = new URL(location.href);
+    return (
+      /(signin|sso|auth|login|idm|portal)/i.test(hostname) ||
+      /(^|\/)(signin|sso|login)(\/|$)/i.test(pathname) ||
+      /auth-ui/i.test(pathname)
+    );
+  } catch (ignored) {
+    return false;
+  }
+}
+
+function findAuthInput() {
+  const sel = 'input[type="email"], input[type="password"], input[type="text"], input[type="tel"], input[type="number"], input[type="search"]';
+  for (const el of document.querySelectorAll(sel)) {
+    if (isVisible(el)) return el;
+  }
+  return null;
+}
+
 function goBack() {
     if (signInCard) {
       signInDismissed = true;
@@ -1113,6 +1140,7 @@ function goBack() {
   }
 
   function showSignInCardIfNeeded() {
+    if (isAuthPage()) return;
     if (signInCard || signInDismissed) return;
     if (isSignedIn()) return;
     buildSignInCard();
@@ -1475,6 +1503,23 @@ function goBack() {
     scheduleStartHighlight();
     scheduleSeasonControl();
     setTimeout(showSignInCardIfNeeded, 700);
+    if (isAuthPage()) {
+      stopStartHighlight();
+      setTimeout(() => {
+        const input = findAuthInput();
+        if (input) {
+          setCurrent(input);
+          try {
+            input.focus({ preventScroll: false });
+          } catch (ignored) {
+            // continue
+          }
+          if (domDump) console.log(`[pbs-deck] parked focus on auth input ${input.type}`);
+        } else if (domDump) {
+          console.log('[pbs-deck] no auth input found');
+        }
+      }, 800);
+    }
     showHints();
 
     observer = new MutationObserver(() => scheduleRescan());
