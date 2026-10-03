@@ -2,6 +2,8 @@ const POLL_MS = 32;
 const AXIS_DEADZONE = 0.45;
 const DIR_INITIAL_MS = 380;
 const DIR_REPEAT_MS = 230;
+const BUTTON_DEBOUNCE_MS = 150;
+const CLICK_DEDUP_MS = 180;
 const SCROLL_STEP_FACTOR = 0.8;
 const RING_COLOR = '#f2c10e';
 const OVERLAY_BG = 'rgba(10, 14, 20, 0.82)';
@@ -53,6 +55,9 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
   let styleEl = null;
   let hintsVisible = false;
   let heldButtons = new Set();
+  let buttonFireTime = new Map();
+  let clickGuardEl = null;
+  let clickGuardAt = 0;
   let lastDir = null;
   let dirTimer = null;
   let rescanTimer = null;
@@ -1435,8 +1440,15 @@ function goBack() {
     }, DIR_INITIAL_MS);
   }
 
-  function handleButtonDown(name) {
+  function handleButtonDown(name, index) {
     if (guardControls()) return;
+    const now = Date.now();
+    const lastFire = buttonFireTime.get(index);
+    if (index !== undefined && lastFire && now - lastFire < BUTTON_DEBOUNCE_MS) {
+      if (domDump) console.log(`[pbs-deck] debounced duplicate ${name} (${now - lastFire}ms)`);
+      return;
+    }
+    buttonFireTime.set(index === undefined ? name : index, now);
     if (seasonPicker) {
       if (name === 'A') applySeason();
       else if (name === 'B') closeSeasonPicker();
@@ -1481,7 +1493,7 @@ function goBack() {
     for (const [name, index] of Object.entries(BUTTON_INDEX)) {
       const pressed = Boolean(pad.buttons[index]?.pressed);
       const was = heldButtons.has(index);
-      if (pressed && !was) handleButtonDown(name);
+      if (pressed && !was) handleButtonDown(name, index);
       if (pressed) heldButtons.add(index);
       else heldButtons.delete(index);
     }
@@ -1492,6 +1504,20 @@ function goBack() {
   function attach() {
     if (pollingTimer) return;
     injectStyles();
+    document.addEventListener(
+      'click',
+      (e) => {
+        const now = Date.now();
+        if (e.target === clickGuardEl && now - clickGuardAt < CLICK_DEDUP_MS) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          if (domDump) console.log('[pbs-deck] suppressed duplicate click (same target)');
+        }
+        clickGuardEl = e.target;
+        clickGuardAt = now;
+      },
+      true
+    );
     focusables = scanFocusables();
     const player = findPlayer();
     if (player && player.getBoundingClientRect().width > 0) {
