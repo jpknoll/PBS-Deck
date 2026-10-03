@@ -388,7 +388,7 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
   function isVisible(el) {
     if (!(el instanceof Element)) return false;
     if (el.closest('script, style, noscript, template')) return false;
-    if (el.closest('.pbs-deck-signin, .pbs-deck-hints, .pbs-deck-confirm')) return false;
+    if (el.closest('.pbs-deck-hints, .pbs-deck-confirm')) return false;
     if (el.closest('[class*="ContinueWatching" i], [class*="LiveTVRow" i]')) return false;
     if (el.tagName === 'IFRAME' && /player\.pbs\.org/.test(el.getAttribute('src') || '')) return false;
     const style = window.getComputedStyle(el);
@@ -454,6 +454,7 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
         stopStartHighlight();
         return;
       }
+      if (signInCard || signInCta) return;
       const start = findStartButton();
       if (start) {
         setCurrent(start);
