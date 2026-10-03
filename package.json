@@ -1,6 +1,6 @@
 {
   "name": "pbs-deck",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Controller-friendly PBS streaming launcher for SteamOS HTPCs, forked from StreamingServiceLauncher",
   "main": "index.js",
   "scripts": {
