@@ -403,7 +403,50 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
     if ((rect.right < -4 || rect.left > vw + 4) && !inSidewaysScrollContainer(el)) {
       return false;
     }
+    const topEl = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    if (topEl && topEl !== el && !el.contains(topEl) && !topEl.contains(el)) {
+      return false;
+    }
     return true;
+  }
+
+  function isBodyLocked() {
+    const st = window.getComputedStyle(document.body);
+    return st.overflow === 'hidden' || st.overflowY === 'hidden';
+  }
+
+  function overlayPresent() {
+    if (!isBodyLocked()) return false;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    for (const el of document.querySelectorAll('[aria-modal], [role="dialog"], [class*="odal" i]')) {
+      const r = el.getBoundingClientRect();
+      if (r.width < vw * 0.5 || r.height < vh * 0.4) continue;
+      if (r.width * r.height < vw * vh * 0.2) continue;
+      const st = window.getComputedStyle(el);
+      if (st.display === 'none' || st.visibility === 'hidden' || +st.opacity === 0) continue;
+      return true;
+    }
+    return false;
+  }
+
+  function isOverlayMember(el) {
+    let node = el;
+    while (node && node !== document.documentElement) {
+      if (window.getComputedStyle(node).position === 'fixed') return true;
+      node = node.parentElement;
+    }
+    return false;
+  }
+
+  function firstInViewport(list) {
+    for (const el of list) {
+      const r = el.getBoundingClientRect();
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      if (cx >= 0 && cx <= window.innerWidth && cy >= 0 && cy <= window.innerHeight) return el;
+    }
+    return list[0] || null;
   }
 
   const START_TEXT_RE = [
@@ -476,11 +519,14 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
   function scanFocusables() {
     const seen = new Set();
     const result = [];
+    const locked = overlayPresent();
     for (const el of document.querySelectorAll(FOCUS_SELECTOR)) {
       if (seen.has(el)) continue;
       seen.add(el);
       if (isSeasonSelect(el)) continue;
-      if (isVisible(el)) result.push(el);
+      if (!isVisible(el)) continue;
+      if (locked && !isOverlayMember(el)) continue;
+      result.push(el);
     }
     return result;
   }
@@ -538,17 +584,17 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
       rescanTimer = null;
       const fresh = scanFocusables();
       if (fresh.join('|') === focusables.join('|')) {
-        if (!current && fresh.length) setCurrent(fresh[0]);
+        if (!current && fresh.length) setCurrent(firstInViewport(fresh) || fresh[0]);
         return;
       }
       focusables = fresh;
-      if (current && !current.isConnected) {
+      if (current && (!current.isConnected || !fresh.includes(current))) {
         current = null;
       }
       ensureSeasonControl();
       refreshSignIn();
       if (!current && fresh.length) {
-        setCurrent(fresh[0]);
+        setCurrent(firstInViewport(fresh) || fresh[0]);
       }
       updateRing();
       emitDump('mutation');
@@ -1102,10 +1148,13 @@ function goBack() {
     if (real) {
       real.click();
       if (domDump) console.log('[pbs-deck] sign-in flow started');
-      if (!current || !current.isConnected) {
-        const start = findStartButton();
-        setCurrent(start && start.isConnected ? start : focusables[0]);
-      }
+      current = null;
+      updateRing();
+      setTimeout(() => {
+        const fresh = scanFocusables();
+        if (fresh.length) setCurrent(firstInViewport(fresh) || fresh[0]);
+        else if (domDump) console.log('[pbs-deck] no focusables after sign-in open');
+      }, 400);
       return;
     }
     showToast('Sign-in not available here \u2014 press B, then open any locked episode');
