@@ -61,6 +61,7 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
   let signInCard = null;
   let signInCta = null;
   let signInDismissed = false;
+  let autoSignInAttempted = false;
   let playerPlaying = null;
   let hintsVisibleBeforePlay = false;
   let confirmCard = null;
@@ -183,11 +184,14 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
       .pbs-deck-hints td:first-child { color: ${RING_COLOR}; font-weight: 700; text-align: right; white-space: nowrap; }
       .pbs-deck-signin {
         position: fixed;
-        left: 50%;
-        top: 50%;
-        transform: translate(-50%, -50%);
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         z-index: 2147483646;
         pointer-events: none;
+      }
+      .pbs-deck-signin .pbs-deck-signin-box {
         box-sizing: border-box;
         max-width: 560px;
         width: calc(100vw - 64px);
@@ -199,15 +203,16 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
         border: 2px solid ${RING_COLOR};
         border-radius: 16px;
         box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+        pointer-events: auto;
       }
-      .pbs-deck-signin h1 {
+      .pbs-deck-signin .pbs-deck-signin-box h1 {
         margin: 0 0 10px;
         font-size: 24px;
         line-height: 1.2;
         color: ${RING_COLOR};
       }
-      .pbs-deck-signin p { margin: 0 0 6px; color: #d8dde4; }
-      .pbs-deck-signin .pbs-deck-signin-cta {
+      .pbs-deck-signin .pbs-deck-signin-box p { margin: 0 0 6px; color: #d8dde4; }
+      .pbs-deck-signin .pbs-deck-signin-box .pbs-deck-signin-cta {
         margin-top: 18px;
         display: inline-block;
         padding: 12px 30px;
@@ -219,7 +224,7 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
         box-shadow: 0 0 0 3px rgba(242, 193, 14, 0.35);
         cursor: pointer;
       }
-      .pbs-deck-signin .pbs-deck-signin-note {
+      .pbs-deck-signin .pbs-deck-signin-box .pbs-deck-signin-note {
         margin-top: 12px;
         font-size: 12.5px;
         color: #98a2ad;
@@ -243,11 +248,14 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
       }
       .pbs-deck-confirm {
         position: fixed;
-        left: 50%;
-        top: 50%;
-        transform: translate(-50%, -50%);
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         z-index: 2147483646;
         pointer-events: none;
+      }
+      .pbs-deck-confirm .pbs-deck-confirm-box {
         box-sizing: border-box;
         max-width: 460px;
         width: calc(100vw - 64px);
@@ -259,13 +267,14 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
         border: 2px solid ${RING_COLOR};
         border-radius: 16px;
         box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+        pointer-events: auto;
       }
-      .pbs-deck-confirm h1 {
+      .pbs-deck-confirm .pbs-deck-confirm-box h1 {
         margin: 0 0 8px;
         font-size: 22px;
         color: ${RING_COLOR};
       }
-      .pbs-deck-confirm p { margin: 0 0 4px; color: #d8dde4; }
+      .pbs-deck-confirm .pbs-deck-confirm-box p { margin: 0 0 4px; color: #d8dde4; }
       .pbs-deck-confirm-actions {
         margin-top: 20px;
         display: flex;
@@ -802,11 +811,13 @@ function goBack() {
     confirmCard = document.createElement('div');
     confirmCard.className = 'pbs-deck-confirm';
     confirmCard.innerHTML = `
-      <h1>Exit PBS Deck?</h1>
-      <p>Leave the app and return to Steam?</p>
-      <div class="pbs-deck-confirm-actions">
-        <button class="pbs-deck-confirm-danger">Exit</button>
-        <button>Keep Watching</button>
+      <div class="pbs-deck-confirm-box">
+        <h1>Exit PBS Deck?</h1>
+        <p>Leave the app and return to Steam?</p>
+        <div class="pbs-deck-confirm-actions">
+          <button class="pbs-deck-confirm-danger">Exit</button>
+          <button>Keep Watching</button>
+        </div>
       </div>
     `;
     document.documentElement.appendChild(confirmCard);
@@ -1054,11 +1065,13 @@ function goBack() {
     signInCard = document.createElement('div');
     signInCard.className = 'pbs-deck-signin';
     signInCard.innerHTML = `
-      <h1>Sign in to PBS Passport</h1>
-      <p>Passport unlocks the full catalog &mdash; seasons, episodes and the full archive.</p>
-      <p>Pick <b>Sign In</b> to log in with PBS (or Google / Apple / Facebook).</p>
-      <button class="pbs-deck-signin-cta">Sign In</button>
-      <div class="pbs-deck-signin-note">A / Enter to sign in &middot; B / dpad to keep browsing free shows</div>
+      <div class="pbs-deck-signin-box">
+        <h1>Sign in to PBS Passport</h1>
+        <p>Passport unlocks the full catalog &mdash; seasons, episodes and the full archive.</p>
+        <p>Pick <b>Sign In</b> to log in with PBS (or Google / Apple / Facebook).</p>
+        <button class="pbs-deck-signin-cta">Sign In</button>
+        <div class="pbs-deck-signin-note">A / Enter to sign in &middot; B / dpad to keep browsing free shows</div>
+      </div>
     `;
     document.documentElement.appendChild(signInCard);
     signInCta = signInCard.querySelector('.pbs-deck-signin-cta');
@@ -1075,6 +1088,12 @@ function goBack() {
       console.log(
         `[pbs-deck] sign-in card shown; culprit=${si ? `${si.tagName}.${si.className} aria=${si.getAttribute('aria-label')} text=${JSON.stringify(si.textContent && si.textContent.trim())}` : 'none'}`,
       );
+    }
+    if (!autoSignInAttempted) {
+      autoSignInAttempted = true;
+      setTimeout(() => {
+        if (signInCta && signInCta.isConnected && !signInDismissed) startSignIn();
+      }, 1200);
     }
   }
 
