@@ -668,10 +668,6 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
 
   function setCurrent(el) {
     if (!el || !el.isConnected) return;
-    if (signInCard && el !== signInCta) {
-      signInDismissed = true;
-      hideSignInCard();
-    }
     current = el;
     try {
       el.focus({ preventScroll: true });
@@ -738,6 +734,10 @@ function goBack() {
     if (signInCard) {
       signInDismissed = true;
       hideSignInCard();
+      if (!current || !current.isConnected) {
+        const start = findStartButton();
+        setCurrent(start && start.isConnected ? start : focusables[0]);
+      }
       return;
     }
     if (confirmCard) {
@@ -1009,7 +1009,7 @@ function goBack() {
   }
 
   function findSignInButton() {
-    for (const el of document.querySelectorAll('button, a')) {
+    for (const el of document.querySelectorAll('button, a, [role="button"]')) {
       if (
         isVisible(el) &&
         el.textContent &&
@@ -1018,11 +1018,27 @@ function goBack() {
         return el;
       }
     }
+    for (const el of document.querySelectorAll('button, a, [role="button"]')) {
+      const text = (el.textContent || '').trim();
+      const aria = el.getAttribute('aria-label') || '';
+      if (text === 'Sign In' || aria === 'Sign In') return el;
+    }
     return null;
   }
 
   function isSignedIn() {
-    return !findSignInButton();
+    for (const el of document.querySelectorAll('button, a, [role="button"]')) {
+      if (!isVisible(el)) continue;
+      const cls = String(el.className || '');
+      const text = (el.textContent || '').trim();
+      const aria = el.getAttribute('aria-label') || '';
+      if (/^sign out$/i.test(text)) return true;
+      if (/^(account|profile)$/i.test(text) || /^(sign out|account|profile)$/i.test(aria)) {
+        return true;
+      }
+      if (cls.includes('SignInOrProfile') && text !== 'Sign In') return true;
+    }
+    return false;
   }
 
   function hideSignInCard() {
@@ -1082,8 +1098,20 @@ function goBack() {
     signInDismissed = true;
     hideSignInCard();
     const real = findSignInButton();
-    if (real) real.click();
-    if (domDump) console.log('[pbs-deck] sign-in flow started');
+    if (real) {
+      real.click();
+      if (domDump) console.log('[pbs-deck] sign-in flow started');
+      if (!current || !current.isConnected) {
+        const start = findStartButton();
+        setCurrent(start && start.isConnected ? start : focusables[0]);
+      }
+      return;
+    }
+    showToast('Sign-in not available here \u2014 press B, then open any locked episode');
+    if (!current || !current.isConnected) {
+      const start = findStartButton();
+      setCurrent(start && start.isConnected ? start : focusables[0]);
+    }
   }
 
   function focusSearch() {
