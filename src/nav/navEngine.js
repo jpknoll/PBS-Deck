@@ -59,6 +59,7 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
   let clickGuardEl = null;
   let clickGuardAt = 0;
   let lastDir = null;
+  let lastRect = null;
   let dirTimer = null;
   let rescanTimer = null;
   let pollingTimer = null;
@@ -460,6 +461,23 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
     return list[0] || null;
   }
 
+  function nearestTo(rect, list) {
+    if (!rect || !list.length) return firstInViewport(list) || null;
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    let best = null;
+    let bestD = Infinity;
+    for (const el of list) {
+      const r = el.getBoundingClientRect();
+      const d = Math.hypot(r.left + r.width / 2 - cx, r.top + r.height / 2 - cy);
+      if (d < bestD) {
+        bestD = d;
+        best = el;
+      }
+    }
+    return best || firstInViewport(list) || null;
+  }
+
   const START_TEXT_RE = [
     /^resume( watching| episode| now)?$/i,
     /^start( watching| now| episode)?$/i,
@@ -595,17 +613,18 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
       rescanTimer = null;
       const fresh = scanFocusables();
       if (fresh.join('|') === focusables.join('|')) {
-        if (!current && fresh.length) setCurrent(firstInViewport(fresh) || fresh[0]);
+        if (!current && fresh.length) setCurrent(nearestTo(lastRect, fresh));
         return;
       }
       focusables = fresh;
       if (current && (!current.isConnected || !fresh.includes(current))) {
+        if (domDump) console.log('[pbs-deck] current lost; recovering nearest to last position');
         current = null;
       }
       ensureSeasonControl();
       refreshSignIn();
       if (!current && fresh.length) {
-        setCurrent(firstInViewport(fresh) || fresh[0]);
+        setCurrent(nearestTo(lastRect, fresh));
       }
       updateRing();
       emitDump('mutation');
@@ -672,7 +691,7 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
 
     const source = current && current.isConnected ? current : null;
     if (!source) {
-      setCurrent(focusables[0]);
+      setCurrent(nearestTo(lastRect, focusables));
       return;
     }
 
@@ -694,6 +713,10 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
       if (dir === 'left' && rect.right >= srcLeft - 4) continue;
       if (dir === 'down' && rect.top <= srcBottom - 4) continue;
       if (dir === 'up' && rect.bottom >= srcTop + 4) continue;
+      if ((dir === 'right' || dir === 'left')) {
+        const syncBand = Math.max(80, srcRect.height * 1.2);
+        if (Math.abs(rect.top + rect.height / 2 - srcCenterY) > syncBand) continue;
+      }
 
       const verticalOverlap = Math.max(
         0,
@@ -720,13 +743,40 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
       }
     }
 
-    if (!best) best = findClosest(source);
+    if (!best) {
+      if (dir === 'right' || dir === 'left') {
+        let bestV = null;
+        let bestVD = Infinity;
+        for (const el of focusables) {
+          if (el === source || !el.isConnected) continue;
+          const r = el.getBoundingClientRect();
+          if (dir === 'right' && r.left <= srcRight + 4) continue;
+          if (dir === 'left' && r.right >= srcLeft - 4) continue;
+          const vd = Math.abs(r.top + r.height / 2 - srcCenterY);
+          if (vd < bestVD) {
+            bestVD = vd;
+            bestV = el;
+          }
+        }
+        best = bestV;
+      } else {
+        best = findClosest(source);
+      }
+    }
     if (best) setCurrent(best);
   }
 
   function setCurrent(el) {
     if (!el || !el.isConnected) return;
     current = el;
+    try {
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        lastRect = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+      }
+    } catch (ignored) {
+      // continue
+    }
     try {
       el.focus({ preventScroll: true });
     } catch (ignored) {
