@@ -69,6 +69,7 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
   let startHiTimer = null;
   let startHiAttempts = 0;
   let navDumpTimer = null;
+  let pendingWrapScroll = null;
   let signInCard = null;
   let signInCta = null;
   let signInDismissed = false;
@@ -415,30 +416,56 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
     return false;
   }
 
-  function isVisible(el) {
-    if (!(el instanceof Element)) return false;
-    if (el.closest('script, style, noscript, template')) return false;
-    if (el.closest('.pbs-deck-hints, .pbs-deck-confirm')) return false;
-    if (el.closest('[class*="ContinueWatching" i], [class*="LiveTVRow" i]')) return false;
-    if (el.tagName === 'IFRAME' && /player\.pbs\.org/.test(el.getAttribute('src') || '')) return false;
+  function rowContainerFor(el) {
+    let node = el.parentElement;
+    while (node && node !== document.body && node !== document.documentElement) {
+      const st = window.getComputedStyle(node);
+      const ox = st.overflowX;
+      if (
+        (ox === 'auto' || ox === 'scroll' || ox === 'hidden') &&
+        node.scrollWidth > node.clientWidth * 1.5 + 2
+      ) {
+        return node;
+      }
+      if (st.position === 'fixed' || st.position === 'sticky') return null;
+      node = node.parentElement;
+    }
+    return null;
+  }
+
+  function _visCheck(el, withDetail = false) {
+    const tagName = (node) =>
+      node ? `${node.tagName}.${String(node.className || '').toString().slice(0, 28)}` : '';
+    if (!(el instanceof Element)) return { ok: false, reason: 'not-element' };
+    if (el.closest('script, style, noscript, template')) return { ok: false, reason: 'inline' };
+    if (el.closest('.pbs-deck-hints, .pbs-deck-confirm')) return { ok: false, reason: 'ours' };
+    if (el.closest('[class*="ContinueWatching" i], [class*="LiveTVRow" i]')) {
+      const titleClasses = `${el.className || ''} ${el.closest('h1, h2, h3, h4, h5')?.className || ''}`;
+      if (/title/i.test(titleClasses)) return { ok: false, reason: 'watch-row-title' };
+    }
+    if (el.tagName === 'IFRAME' && /player\.pbs\.org/.test(el.getAttribute('src') || '')) return { ok: false, reason: 'iframe' };
     const style = window.getComputedStyle(el);
-    if (style.display === 'none' || style.visibility === 'hidden') return false;
-    if (+style.opacity === 0) return false;
-    if (el.getAttribute('aria-hidden') === 'true') return false;
-    if (el.tagName !== 'INPUT' && NOISE_CLASS.test(String(el.className || ''))) return false;
-    if (el.tagName === 'INPUT' && /(newsletter|subscribe)/i.test(`${el.id || ''} ${el.name || ''} ${el.className || ''}`)) return false;
+    if (style.display === 'none' || style.visibility === 'hidden') return { ok: false, reason: 'display' };
+    if (+style.opacity === 0) return { ok: false, reason: 'opacity' };
+    if (el.getAttribute('aria-hidden') === 'true') return { ok: false, reason: 'aria-hidden' };
+    if (el.tagName !== 'INPUT' && NOISE_CLASS.test(String(el.className || ''))) return { ok: false, reason: 'noise' };
+    if (el.tagName === 'INPUT' && /(newsletter|subscribe)/i.test(`${el.id || ''} ${el.name || ''} ${el.className || ''}`)) return { ok: false, reason: 'newsletter' };
     const rect = el.getBoundingClientRect();
-    if (rect.width < MIN_FOCUS_WIDTH || rect.height < MIN_FOCUS_HEIGHT) return false;
-    if (rect.width * rect.height < MIN_FOCUS_AREA) return false;
+    if (rect.width < MIN_FOCUS_WIDTH || rect.height < MIN_FOCUS_HEIGHT) return { ok: false, reason: 'size' };
+    if (rect.width * rect.height < MIN_FOCUS_AREA) return { ok: false, reason: 'area' };
     const vw = window.innerWidth;
     if ((rect.right < -4 || rect.left > vw + 4) && !inSidewaysScrollContainer(el)) {
-      return false;
+      return { ok: false, reason: 'viewport' };
     }
     const topEl = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
     if (topEl && topEl !== el && !el.contains(topEl) && !topEl.contains(el)) {
-      return false;
+      return { ok: false, reason: 'occlusion', detail: withDetail ? tagName(topEl) : undefined };
     }
-    return true;
+    return { ok: true, reason: 'ok' };
+  }
+
+  function isVisible(el) {
+    return _visCheck(el).ok;
   }
 
   function isBodyLocked() {
@@ -692,6 +719,40 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
     return largest || best;
   }
 
+  function rowAudit(source) {
+    const container = rowContainerFor(source);
+    if (!container) return '[no row container]';
+    const src = source.getBoundingClientRect();
+    const srcCenterY = src.top + src.height / 2;
+    const band = Math.max(80, src.height * 1.2);
+    const members = [];
+    for (const el of container.querySelectorAll(FOCUS_SELECTOR)) {
+      const r = el.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1) continue;
+      if (Math.abs(r.top + r.height / 2 - srcCenterY) > band) continue;
+      members.push(el);
+    }
+    members.sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
+    const lbl = (el) => {
+      const r = el.getBoundingClientRect();
+      return `${Math.round(r.left)}/${(el.getAttribute('href') || el.textContent || '')
+        .toString()
+        .slice(0, 20)}`;
+    };
+    const tokens = members.map((el) => {
+      let st;
+      if (focusables.includes(el)) {
+        st = 'present';
+      } else {
+        const chk = _visCheck(el, true);
+        st = chk.ok ? 'present' : chk.reason + (chk.detail ? `(${chk.detail})` : '');
+      }
+      if (el === source) st += '*cur';
+      return `${lbl(el)}:${st}`;
+    });
+    return `n=${members.length} ${tokens.join(' ')}`;
+  }
+
   function moveDirection(dir) {
     if (seasonPicker) {
       moveSeasonDir(dir);
@@ -724,18 +785,37 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
 
     let best = null;
     let bestScore = Infinity;
+    const scored = [];
+    const guards = [];
+    const isHoriz = dir === 'right' || dir === 'left';
 
     for (const el of focusables) {
       if (el === source || !el.isConnected) continue;
       const rect = el.getBoundingClientRect();
-      if (dir === 'right' && rect.left <= srcRight + 4) continue;
-      if (dir === 'left' && rect.right >= srcLeft - 4) continue;
-      if (dir === 'down' && rect.top <= srcBottom - 4) continue;
-      if (dir === 'up' && rect.bottom >= srcTop + 4) continue;
-      if ((dir === 'right' || dir === 'left')) {
-        const syncBand = Math.max(80, srcRect.height * 1.2);
-        if (Math.abs(rect.top + rect.height / 2 - srcCenterY) > syncBand) continue;
+      if (dir === 'right' && rect.left + rect.width / 2 <= srcCenterX) {
+        if (domDump && isHoriz) guards.push({ el, g: 'behind', l: Math.round(rect.left) });
+        continue;
       }
+      if (dir === 'left' && rect.left + rect.width / 2 >= srcCenterX) {
+        if (domDump && isHoriz) guards.push({ el, g: 'behind', l: Math.round(rect.left) });
+        continue;
+      }
+      if (dir === 'down' && rect.top + rect.height / 2 <= srcCenterY + 4) {
+        if (domDump && !isHoriz) guards.push({ el, g: 'px', l: Math.round(rect.top) });
+        continue;
+      }
+      if (dir === 'up' && rect.top + rect.height / 2 >= srcCenterY - 4) {
+        if (domDump && !isHoriz) guards.push({ el, g: 'px', l: Math.round(rect.top) });
+        continue;
+      }
+      if (isHoriz) {
+        const lane = Math.max(24, srcRect.height * 0.18);
+        if (Math.abs(rect.top - srcRect.top) > lane) {
+          if (domDump) guards.push({ el, g: 'band', l: Math.round(rect.left) });
+          continue;
+        }
+      }
+      if (domDump && isHoriz) guards.push({ el, g: 'scored', l: Math.round(rect.left) });
 
       const verticalOverlap = Math.max(
         0,
@@ -756,33 +836,92 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
       const across = dir === 'right' || dir === 'left' ? Math.abs(dy) : Math.abs(dx);
       const score = along + across * 4.5 - overlapBudget * 120;
 
+      if (domDump) scored.push({ el, score, along, across, overlapBudget });
+
       if (score < bestScore) {
         bestScore = score;
         best = el;
       }
     }
 
+    if (domDump) {
+      const lbl = (el) =>
+        `${Math.round(el.getBoundingClientRect().left)}/${(el.getAttribute('href') || el.textContent || '')
+          .toString()
+          .slice(0, 32)}`;
+      const top = scored
+        .sort((a, b) => a.score - b.score)
+        .slice(0, 4)
+        .map((s) => `${lbl(s.el)}~${Math.round(s.score)}`)
+        .join(' | ');
+      console.log(
+        `[pbs-deck] ${dir} from ${lbl(source)} => ` +
+          `${best ? lbl(best) : '(none)'} | top: ${top}`,
+      );
+      if (isHoriz) console.log(`[pbs-deck] row-audit ${dir} ${rowAudit(source)}`);
+      const g = guards
+        .map((x) => `${Math.round(x.el.getBoundingClientRect().left)}/${(x.el.getAttribute('href') || '')
+          .toString()
+          .slice(0, 16)}->${x.g}(${x.l})`)
+        .join(' ');
+      const axis = isHoriz
+        ? `srcLeft=${Math.round(srcRect.left)} srcRight=${Math.round(srcRect.right)} w=${Math.round(srcRect.width)}`
+        : `srcTop=${Math.round(srcRect.top)} srcBottom=${Math.round(srcRect.bottom)} h=${Math.round(srcRect.height)}`;
+      console.log(`[pbs-deck] guards ${dir} ${axis}: ${g}`);
+    }
+
     if (!best) {
       if (dir === 'right' || dir === 'left') {
-        let bestV = null;
-        let bestVD = Infinity;
-        for (const el of focusables) {
-          if (el === source || !el.isConnected) continue;
-          const r = el.getBoundingClientRect();
-          if (dir === 'right' && r.left <= srcRight + 4) continue;
-          if (dir === 'left' && r.right >= srcLeft - 4) continue;
-          const vd = Math.abs(r.top + r.height / 2 - srcCenterY);
-          if (vd < bestVD) {
-            bestVD = vd;
-            bestV = el;
-          }
+        best = wrapInRow(source, dir);
+        if (best) pendingWrapScroll = dir;
+        if (best && domDump) {
+          console.log(
+            `[pbs-deck] wrap ${dir} => ${Math.round(
+              best.getBoundingClientRect().left,
+            )}/${(best.getAttribute('href') || '').slice(0, 40)}`,
+          );
         }
-        best = bestV;
+        if (!best) {
+          let bestV = null;
+          let bestVD = Infinity;
+          for (const el of focusables) {
+            if (el === source || !el.isConnected) continue;
+            const r = el.getBoundingClientRect();
+            const cX = r.left + r.width / 2;
+            if (dir === 'right' && cX <= srcCenterX) continue;
+            if (dir === 'left' && cX >= srcCenterX) continue;
+            const vd = Math.abs(r.top + r.height / 2 - srcCenterY);
+            if (vd < bestVD) {
+              bestVD = vd;
+              bestV = el;
+            }
+          }
+          best = bestV;
+        }
       } else {
         best = findClosest(source);
       }
     }
     if (best) setCurrent(best);
+  }
+
+  function wrapInRow(source, dir) {
+    const container = rowContainerFor(source);
+    if (!container) return null;
+    const srcRect = source.getBoundingClientRect();
+    const lane = Math.max(24, srcRect.height * 0.18);
+    const row = [];
+    for (const el of focusables) {
+      if (el === source || !el.isConnected) continue;
+      if (!container.contains(el)) continue;
+      const r = el.getBoundingClientRect();
+      if (Math.abs(r.top - srcRect.top) > lane) continue;
+      if (r.width < 1 || r.height < 1) continue;
+      row.push(el);
+    }
+    if (!row.length) return null;
+    row.sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
+    return dir === 'right' ? row[0] : row[row.length - 1];
   }
 
   function setCurrent(el) {
@@ -806,6 +945,20 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
   }
 
   function scrollToElement(el) {
+    if (pendingWrapScroll !== null) {
+      const wrapDir = pendingWrapScroll;
+      pendingWrapScroll = null;
+      try {
+        el.scrollIntoView({
+          block: 'center',
+          inline: wrapDir === 'right' ? 'start' : 'end',
+          behavior: 'auto',
+        });
+      } catch (ignored) {
+        // best-effort wrap scroll
+      }
+      return;
+    }
     const rect = el.getBoundingClientRect();
     const vw = window.innerWidth;
     const vh = window.innerHeight;
@@ -1438,22 +1591,30 @@ function goBack() {
     updateRing();
   }
 
+  let ringRaf = null;
+  let ringStableFrames = 0;
+  let ringLastRect = null;
+
   function updateRing() {
     if (seasonPicker) {
       if (ring) ring.style.display = 'none';
+      stopRingTracker();
       return;
     }
     if (current && current.tagName === 'IFRAME' && /player\.pbs\.org/.test(current.src || '')) {
       if (ring) ring.style.display = 'none';
+      stopRingTracker();
       return;
     }
     if (playerPlaying) {
       if (ring) ring.style.display = 'none';
+      stopRingTracker();
       if (domDump) console.log('[pbs-deck] ring hidden: playing');
       return;
     }
     if (!current || !current.isConnected) {
       if (ring) ring.style.display = 'none';
+      stopRingTracker();
       return;
     }
     injectStyles();
@@ -1462,12 +1623,59 @@ function goBack() {
       ring.className = 'pbs-deck-ring';
       document.documentElement.appendChild(ring);
     }
-    const rect = current.getBoundingClientRect();
     ring.style.display = 'block';
+    placeRingNow();
+    ringLastRect = null;
+    ringStableFrames = 0;
+    startRingTracker();
+  }
+
+  function placeRingNow() {
+    if (!current || !current.isConnected || !ring) return;
+    const rect = current.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) return;
     ring.style.top = `${rect.top}px`;
     ring.style.left = `${rect.left}px`;
     ring.style.width = `${rect.width}px`;
     ring.style.height = `${rect.height}px`;
+  }
+
+  function startRingTracker() {
+    stopRingTracker();
+    ringRaf = requestAnimationFrame(function tick() {
+      ringRaf = requestAnimationFrame(tick);
+      if (!current || !current.isConnected || !ring || ring.style.display === 'none') {
+        return;
+      }
+      if (seasonPicker || playerPlaying) return;
+      const rect = current.getBoundingClientRect();
+      if (rect.width < 1 || rect.height < 1) return;
+      const moved =
+        !ringLastRect ||
+        Math.abs(rect.left - ringLastRect.left) > 0.5 ||
+        Math.abs(rect.top - ringLastRect.top) > 0.5;
+      if (moved) {
+        ringStableFrames = 0;
+        ringLastRect = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+        ring.style.top = `${rect.top}px`;
+        ring.style.left = `${rect.left}px`;
+        ring.style.width = `${rect.width}px`;
+        ring.style.height = `${rect.height}px`;
+      } else {
+        ringStableFrames += 1;
+        if (ringStableFrames > 6) {
+          stopRingTracker();
+          return;
+        }
+      }
+    });
+  }
+
+  function stopRingTracker() {
+    if (ringRaf) {
+      cancelAnimationFrame(ringRaf);
+      ringRaf = null;
+    }
   }
 
   function guardControls() {
