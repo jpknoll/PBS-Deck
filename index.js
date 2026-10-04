@@ -417,13 +417,17 @@ const registerProbeClicker = (webContents) => {
   }, 1000);
 };
 
+let downloadedUpdate = null;
+
 const setupAutoUpdate = () => {
   if (!app.isPackaged) {
     console.log("[auto-update] disabled (unpackaged dev run)");
     return;
   }
   autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
+  // Defer install: the user triggers it from the on-screen ringlet, so a
+  // plain quit must NOT auto-install (that would defeat "ignore it").
+  autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.logger = console;
   autoUpdater.on("error", (err) => {
     console.error("[auto-update] error:", err.message || err);
@@ -442,11 +446,25 @@ const setupAutoUpdate = () => {
       console.log(`[auto-update] download ${Math.floor(p.percent)}%`);
     }
   });
-  autoUpdater.on("update-downloaded", () => {
-    console.log("[auto-update] update downloaded; installs on quit");
+  autoUpdater.on("update-downloaded", (info) => {
+    downloadedUpdate = { version: (info && info.version) || "" };
+    console.log("[auto-update] update downloaded; waiting for user to apply", downloadedUpdate);
     for (const w of BrowserWindow.getAllWindows()) {
-      w.webContents.send("pbs-deck:update-ready");
+      w.webContents.send("pbs-deck:update-ready", downloadedUpdate);
     }
+  });
+  ipcMain.on("nav:install-update", () => {
+    console.log("[auto-update] install requested via ringlet");
+    setTimeout(() => autoUpdater.quitAndInstall(false, true), 250);
+  });
+  // Re-show the ringlet after any in-app or full page navigation, since the
+  // preload re-attaches per page and would otherwise miss the one-shot event.
+  app.on("browser-window-created", (_e, win) => {
+    win.webContents.on("did-finish-load", () => {
+      if (downloadedUpdate) {
+        win.webContents.send("pbs-deck:update-ready", downloadedUpdate);
+      }
+    });
   });
   setTimeout(() => {
     autoUpdater

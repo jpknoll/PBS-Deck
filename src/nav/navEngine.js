@@ -134,7 +134,9 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
   if (ipcRenderer) {
     ipcRenderer.on('nav:probe-back', () => goBack());
     ipcRenderer.on('nav:probe-x', () => handlePlayPause());
-    ipcRenderer.on('pbs-deck:update-ready', () => showToast('Update ready \u2014 installs on exit'));
+    ipcRenderer.on('pbs-deck:update-ready', (_e, payload) => {
+      showUpdateRinglet(payload && payload.version);
+    });
     ipcRenderer.on('pbs-deck:update-failed', () => showToast('Update check failed'));
   }
 
@@ -251,6 +253,23 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
         opacity: 0;
         transition: opacity 260ms ease;
         white-space: nowrap;
+      }
+      .pbs-deck-ringlet {
+        position: fixed;
+        right: 20px;
+        bottom: 20px;
+        z-index: 2147483645;
+        background: rgba(10, 14, 20, 0.94);
+        color: ${OVERLAY_TEXT};
+        font: 600 14px/1.35 system-ui, -apple-system, sans-serif;
+        padding: 12px 20px;
+        border: 1.5px solid ${RING_COLOR};
+        border-radius: 12px;
+        box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+        cursor: pointer;
+      }
+      .pbs-deck-ringlet:hover {
+        background: rgba(24, 30, 40, 0.97);
       }
       .pbs-deck-confirm {
         position: fixed;
@@ -1299,6 +1318,29 @@ function goBack() {
     toast.__t = setTimeout(() => {
       toast.style.opacity = '0';
     }, 1400);
+  }
+
+  function showUpdateRinglet(version) {
+    injectStyles();
+    let el = document.getElementById('pbs-deck-update-ringlet');
+    if (!el) {
+      el = document.createElement('button');
+      el.id = 'pbs-deck-update-ringlet';
+      el.type = 'button';
+      el.setAttribute('role', 'button');
+      el.className = 'pbs-deck-ringlet';
+      el.addEventListener('click', () => {
+        try {
+          if (ipcRenderer) ipcRenderer.send('nav:install-update');
+        } catch (ignored) {
+          // best-effort; updater not available in dev
+        }
+      });
+      document.documentElement.appendChild(el);
+    }
+    el.textContent = version
+      ? `Update ${version} ready \u2014 press A to install`
+      : 'Update ready \u2014 press A to install';
   }
 
   function clickCenter() {
