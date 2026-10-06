@@ -453,9 +453,29 @@ const setupAutoUpdate = () => {
       w.webContents.send("pbs-deck:update-ready", downloadedUpdate);
     }
   });
+  // Do NOT let electron-updater spawn the relaunch itself: its AppImage
+  // path relaunches with EMPTY argv (losing flags like --no-sandbox /
+  // --ozone-platform) and detached, which left a blank screen on the HTPC.
+  // We relaunch from before-quit-for-update with the original argv instead.
+  autoUpdater.autoRunAppAfterInstall = false;
+  require("electron").autoUpdater.on("before-quit-for-update", () => {
+    const appImage = process.env.APPIMAGE;
+    console.log("[auto-update] relaunching", appImage || "electron", process.argv.slice(1));
+    if (appImage) {
+      // Launch the (now-updated) AppImage with the original arguments.
+      require("child_process")
+        .spawn(appImage, process.argv.slice(1), { detached: true, stdio: "ignore" })
+        .unref();
+    } else {
+      app.relaunch({ args: process.argv.slice(1) });
+    }
+  });
   ipcMain.on("nav:install-update", () => {
     console.log("[auto-update] install requested via ringlet");
-    setTimeout(() => autoUpdater.quitAndInstall(false, true), 250);
+    // isForceRunAfter=false (with autoRunAppAfterInstall=false above): install
+    // only, then the before-quit-for-update relaunch above starts the app
+    // in-place with the preserved command line.
+    setTimeout(() => autoUpdater.quitAndInstall(false, false), 250);
   });
   // Re-show the ringlet after any in-app or full page navigation, since the
   // preload re-attaches per page and would otherwise miss the one-shot event.
@@ -514,6 +534,26 @@ app.whenReady().then(async () => {
   registerNavHandlers();
   createWindow();
   setupAutoUpdate();
+  if (!app.isPackaged && process.env.PBS_DECK_SIMULATE_UPDATE) {
+    // Dev-only: show the update pill in the top nav so the flow can be QA'd
+    // without a real downloaded update. Re-sends on every page load.
+    console.log(
+      "[auto-update] SIMULATE_UPDATE enabled, version",
+      process.env.PBS_DECK_SIMULATE_UPDATE,
+    );
+    ipcMain.on("nav:install-update", () => {
+      console.log("[auto-update] install requested via ringlet (SIMULATED)");
+    });
+    for (const w of BrowserWindow.getAllWindows()) {
+      w.webContents.on("did-finish-load", () => {
+        setTimeout(() => {
+          w.webContents.send("pbs-deck:update-ready", {
+            version: process.env.PBS_DECK_SIMULATE_UPDATE,
+          });
+        }, 3000);
+      });
+    }
+  }
 });
 
 app.on("window-all-closed", () => {

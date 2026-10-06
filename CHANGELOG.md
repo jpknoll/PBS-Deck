@@ -2,6 +2,34 @@
 
 All versioned changes to PBS Deck. Order: newest first.
 
+## 0.1.11 — Update pill in top nav, vertical nav fixes
+- Update pill moved from the fixed bottom-right corner into the top utility
+  nav (right of Sign In): dpad-reachable, follows nav traversal, A still
+  requests the install (`showUpdateRinglet` now appends into the utility nav).
+- Up-navigation row bug: rows directly under the fixed top nav were rejected
+  as occluded (raw-center `elementFromPoint` hit the nav), so up from row 2
+  jumped to the hero instead of row 1. `_visCheck` now retests at the center
+  of the viewport-visible portion before declaring occluded.
+- Up from content now prefers elements strictly above (center-based) instead
+  of `findClosest`; top-nav targets are scored separately (`navBest`) and only
+  used when no content candidate exists — no more climbing past the last row
+  straight into the nav.
+- Blank-screen HTPC fix: electron-updater's AppImage relaunch used empty argv
+  (dropping `--no-sandbox`/`--ozone-platform`). `autoRunAppAfterInstall=false`
+  plus a `before-quit-for-update` handler respawns the AppImage with the
+  original argv; `quitAndInstall(false, false)`.
+- Dev-only `PBS_DECK_SIMULATE_UPDATE=x.y.z` shows the pill and logs a simulated
+  install for QA. Files: `index.js`, `src/nav/navEngine.js`.
+
+## 0.1.10 — Home-page navigation fixes
+- Horizontal moves restricted to the source row (tight lane guard) so rail-end
+  wraps target the correct first/last card instead of a featured link on
+  another row.
+- Up/down guards center-based (symmetric with horizontal); Continue Watching /
+  Live TV exclusion scoped to the row title only.
+- rAF focus-ring tracker follows the element through smooth scroll.
+- Files: `src/nav/navEngine.js`. Commit `78ca022`.
+
 ## 0.1.9 — Deferred-update ringlet
 - No more silent install-on-quit (`autoInstallOnAppQuit=false`).
 - Persistent bottom-right focusable ringlet ("Update vX ready — press A to

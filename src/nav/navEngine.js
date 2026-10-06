@@ -256,21 +256,22 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
         white-space: nowrap;
       }
       .pbs-deck-ringlet {
-        position: fixed;
-        right: 20px;
-        bottom: 20px;
-        z-index: 2147483645;
-        background: rgba(10, 14, 20, 0.94);
+        display: inline-flex;
+        align-items: center;
+        height: 40px;
+        margin: 12px 14px 12px 0;
+        padding: 0 18px;
+        background: rgba(10, 14, 20, 0.6);
         color: ${OVERLAY_TEXT};
-        font: 600 14px/1.35 system-ui, -apple-system, sans-serif;
-        padding: 12px 20px;
+        font: 700 13px/1.15 system-ui, -apple-system, sans-serif;
         border: 1.5px solid ${RING_COLOR};
-        border-radius: 12px;
-        box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+        border-radius: 20px;
+        box-shadow: 0 0 0 3px rgba(242, 193, 14, 0.25), 0 8px 28px rgba(0, 0, 0, 0.4);
         cursor: pointer;
+        white-space: nowrap;
       }
       .pbs-deck-ringlet:hover {
-        background: rgba(24, 30, 40, 0.97);
+        background: rgba(24, 30, 40, 0.9);
       }
       .pbs-deck-confirm {
         position: fixed;
@@ -454,14 +455,25 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
     if (rect.width < MIN_FOCUS_WIDTH || rect.height < MIN_FOCUS_HEIGHT) return { ok: false, reason: 'size' };
     if (rect.width * rect.height < MIN_FOCUS_AREA) return { ok: false, reason: 'area' };
     const vw = window.innerWidth;
+    const vh = window.innerHeight;
     if ((rect.right < -4 || rect.left > vw + 4) && !inSidewaysScrollContainer(el)) {
       return { ok: false, reason: 'viewport' };
     }
     const topEl = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-    if (topEl && topEl !== el && !el.contains(topEl) && !topEl.contains(el)) {
-      return { ok: false, reason: 'occlusion', detail: withDetail ? tagName(topEl) : undefined };
+    const clear = (hit) => !hit || hit === el || el.contains(hit) || hit.contains(el);
+    if (clear(topEl)) return { ok: true, reason: 'ok' };
+    // Center can sit under fixed chrome (top nav, update pill) while the card
+    // is still on screen. Retest at the center of the part inside the viewport
+    // before treating the element as invisible.
+    const visTop = Math.max(rect.top, 0);
+    const visBottom = Math.min(rect.bottom, vh);
+    const visLeft = Math.max(rect.left, 0);
+    const visRight = Math.min(rect.right, vw);
+    if (visBottom > visTop && visRight > visLeft) {
+      const probe = document.elementFromPoint((visLeft + visRight) / 2, (visTop + visBottom) / 2);
+      if (clear(probe)) return { ok: true, reason: 'ok' };
     }
-    return { ok: true, reason: 'ok' };
+    return { ok: false, reason: 'occlusion', detail: withDetail ? tagName(topEl) : undefined };
   }
 
   function isVisible(el) {
@@ -753,6 +765,18 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
     return `n=${members.length} ${tokens.join(' ')}`;
   }
 
+  function isInTopNav(el) {
+    for (let n = el; n && n !== document.body; n = n.parentElement) {
+      if (!(n instanceof HTMLElement)) continue;
+      const cs = getComputedStyle(n);
+      if (cs.position === 'fixed' || cs.position === 'sticky') {
+        const r = n.getBoundingClientRect();
+        return r.top <= 12 && r.height >= 24 && r.height <= 200;
+      }
+    }
+    return false;
+  }
+
   function moveDirection(dir) {
     if (seasonPicker) {
       moveSeasonDir(dir);
@@ -785,9 +809,12 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
 
     let best = null;
     let bestScore = Infinity;
+    let navBest = null;
+    let navBestScore = Infinity;
     const scored = [];
     const guards = [];
     const isHoriz = dir === 'right' || dir === 'left';
+    const sourceInNav = isInTopNav(source);
 
     for (const el of focusables) {
       if (el === source || !el.isConnected) continue;
@@ -838,11 +865,23 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
 
       if (domDump) scored.push({ el, score, along, across, overlapBudget });
 
+      const isNavTopTarget = !isHoriz && !sourceInNav && isInTopNav(el);
+      if (isNavTopTarget) {
+        if (domDump) guards.push({ el, g: 'nav', l: Math.round(rect.top) });
+        if (score < navBestScore) {
+          navBestScore = score;
+          navBest = el;
+        }
+        continue;
+      }
+
       if (score < bestScore) {
         bestScore = score;
         best = el;
       }
     }
+
+    if (!best && navBest) best = navBest;
 
     if (domDump) {
       const lbl = (el) =>
@@ -899,7 +938,26 @@ function createNavEngine({ ipcRenderer, domDump = false } = {}) {
           best = bestV;
         }
       } else {
-        best = findClosest(source);
+        // Vertical movement: find closest in direction, not just overlap
+        // For UP: find elements ABOVE source (even partial overlap)
+        // For DOWN: use existing findClosest behavior at boundaries
+        let bestV = null;
+        let bestVD = Infinity;
+        for (const el of focusables) {
+          if (el === source || !el.isConnected) continue;
+          const r = el.getBoundingClientRect();
+          const cY = r.top + r.height / 2;
+          const srcCY = srcRect.top + srcRect.height / 2;
+          // For UP direction: only consider elements ABOVE (cY < srcCY)
+          if (dir === 'up' && cY >= srcCY) continue;
+          // For DOWN direction: any element is OK (existing behavior)
+          const vd = Math.abs(cY - srcCY);
+          if (vd < bestVD) {
+            bestVD = vd;
+            bestV = el;
+          }
+        }
+        best = bestV;
       }
     }
     if (best) setCurrent(best);
@@ -1477,6 +1535,10 @@ function goBack() {
     injectStyles();
     let el = document.getElementById('pbs-deck-update-ringlet');
     if (!el) {
+      const host = document.querySelector(
+        'nav[class*="utility_nav"], nav[class*="UtilityNav"]',
+      );
+      if (!host) return;
       el = document.createElement('button');
       el.id = 'pbs-deck-update-ringlet';
       el.type = 'button';
@@ -1489,7 +1551,7 @@ function goBack() {
           // best-effort; updater not available in dev
         }
       });
-      document.documentElement.appendChild(el);
+      host.appendChild(el);
     }
     el.textContent = version
       ? `Update ${version} ready \u2014 press A to install`
